@@ -1,0 +1,23 @@
+{
+  "name": "three-app",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "cannon-es": "^0.20.0",
+    "lil-gui": "^0.19.2",
+    "three": "^0.169.0",
+    "three-mesh-bvh": "^0.7.6"
+  },
+  "devDependencies": {
+    "vite": "^5.4.10"
+  }
+}

@@ -1,0 +1,381 @@
+{
+    "format": "road-network",
+    "version": 3,
+    "name": "V2V Safety Test Map (BSM / propagation / alerts)",
+    "nodes": [
+        {
+            "id": "J",
+            "position": [
+                0,
+                0,
+                0
+            ]
+        },
+        {
+            "id": "W",
+            "position": [
+                -170,
+                0,
+                0
+            ]
+        },
+        {
+            "id": "S",
+            "position": [
+                0,
+                0,
+                130
+            ]
+        },
+        {
+            "id": "N",
+            "position": [
+                0,
+                0,
+                -130
+            ]
+        },
+        {
+            "id": "E",
+            "position": [
+                155,
+                0,
+                0
+            ]
+        },
+        {
+            "id": "XA",
+            "position": [
+                120,
+                0,
+                0
+            ]
+        },
+        {
+            "id": "A1",
+            "position": [
+                120,
+                0,
+                -130
+            ]
+        },
+        {
+            "id": "A2",
+            "position": [
+                120,
+                0,
+                130
+            ]
+        },
+        {
+            "id": "B1",
+            "position": [
+                165,
+                0,
+                -130
+            ]
+        },
+        {
+            "id": "B2",
+            "position": [
+                165,
+                0,
+                130
+            ]
+        }
+    ],
+    "segments": [
+        {
+            "id": "wleg",
+            "startNodeId": "W",
+            "endNodeId": "J",
+            "controlPoints": [
+                [
+                    -170,
+                    0,
+                    0
+                ],
+                [
+                    0,
+                    0,
+                    0
+                ]
+            ],
+            "lanesForward": 1,
+            "lanesBackward": 1,
+            "laneWidthM": 3.5,
+            "speedLimitKph": 50
+        },
+        {
+            "id": "sleg",
+            "startNodeId": "S",
+            "endNodeId": "J",
+            "controlPoints": [
+                [
+                    0,
+                    0,
+                    130
+                ],
+                [
+                    0,
+                    0,
+                    0
+                ]
+            ],
+            "lanesForward": 1,
+            "lanesBackward": 1,
+            "laneWidthM": 3.5,
+            "speedLimitKph": 50
+        },
+        {
+            "id": "nleg",
+            "startNodeId": "J",
+            "endNodeId": "N",
+            "controlPoints": [
+                [
+                    0,
+                    0,
+                    0
+                ],
+                [
+                    0,
+                    0,
+                    -130
+                ]
+            ],
+            "lanesForward": 1,
+            "lanesBackward": 1,
+            "laneWidthM": 3.5,
+            "speedLimitKph": 50
+        },
+        {
+            "id": "elega",
+            "startNodeId": "J",
+            "endNodeId": "XA",
+            "controlPoints": [
+                [
+                    0,
+                    0,
+                    0
+                ],
+                [
+                    120,
+                    0,
+                    0
+                ]
+            ],
+            "lanesForward": 1,
+            "lanesBackward": 1,
+            "laneWidthM": 3.5,
+            "speedLimitKph": 50
+        },
+        {
+            "id": "elegb",
+            "startNodeId": "XA",
+            "endNodeId": "E",
+            "controlPoints": [
+                [
+                    120,
+                    0,
+                    0
+                ],
+                [
+                    155,
+                    0,
+                    0
+                ]
+            ],
+            "lanesForward": 1,
+            "lanesBackward": 1,
+            "laneWidthM": 3.5,
+            "speedLimitKph": 50
+        },
+        {
+            "id": "asouth",
+            "startNodeId": "A1",
+            "endNodeId": "XA",
+            "controlPoints": [
+                [
+                    120,
+                    0,
+                    -130
+                ],
+                [
+                    120,
+                    0,
+                    0
+                ]
+            ],
+            "lanesForward": 1,
+            "lanesBackward": 1,
+            "laneWidthM": 3.5,
+            "speedLimitKph": 50
+        },
+        {
+            "id": "anorth",
+            "startNodeId": "XA",
+            "endNodeId": "A2",
+            "controlPoints": [
+                [
+                    120,
+                    0,
+                    0
+                ],
+                [
+                    120,
+                    0,
+                    130
+                ]
+            ],
+            "lanesForward": 1,
+            "lanesBackward": 1,
+            "laneWidthM": 3.5,
+            "speedLimitKph": 50
+        },
+        {
+            "id": "broad",
+            "startNodeId": "B1",
+            "endNodeId": "B2",
+            "controlPoints": [
+                [
+                    165,
+                    0,
+                    -130
+                ],
+                [
+                    165,
+                    0,
+                    130
+                ]
+            ],
+            "lanesForward": 1,
+            "lanesBackward": 1,
+            "laneWidthM": 3.5,
+            "speedLimitKph": 50
+        }
+    ],
+    "obstructions": [],
+    "buildings": [
+        {
+            "id": "wallSW",
+            "position": [
+                -14,
+                0,
+                14
+            ],
+            "size": [
+                24,
+                2.5,
+                16
+            ],
+            "rotationY": 0.7854
+        },
+        {
+            "id": "clusterA",
+            "position": [
+                133,
+                0,
+                -60
+            ],
+            "size": [
+                8,
+                30,
+                14
+            ],
+            "rotationY": 0
+        },
+        {
+            "id": "clusterB",
+            "position": [
+                147,
+                0,
+                -60
+            ],
+            "size": [
+                8,
+                30,
+                14
+            ],
+            "rotationY": 0
+        },
+        {
+            "id": "scenery1",
+            "position": [
+                60,
+                0,
+                60
+            ],
+            "size": [
+                18,
+                14,
+                12
+            ],
+            "rotationY": 0
+        },
+        {
+            "id": "scenery2",
+            "position": [
+                -60,
+                0,
+                -70
+            ],
+            "size": [
+                16,
+                12,
+                10
+            ],
+            "rotationY": 0.2
+        }
+    ],
+    "vehicleSpawns": [
+        {
+            "id": "spawn-ego",
+            "segmentId": "wleg",
+            "lane": 0,
+            "distanceAlongM": 95,
+            "isEgo": true
+        },
+        {
+            "id": "j1",
+            "segmentId": "sleg",
+            "lane": 0,
+            "distanceAlongM": 60,
+            "targetSpeedMps": 8
+        },
+        {
+            "id": "j2",
+            "segmentId": "nleg",
+            "lane": -1,
+            "distanceAlongM": 70,
+            "targetSpeedMps": 8
+        },
+        {
+            "id": "eblLead",
+            "segmentId": "wleg",
+            "lane": -1,
+            "distanceAlongM": 45,
+            "targetSpeedMps": 8
+        },
+        {
+            "id": "eblFollower",
+            "segmentId": "wleg",
+            "lane": -1,
+            "distanceAlongM": 125,
+            "targetSpeedMps": 8
+        },
+        {
+            "id": "b1",
+            "segmentId": "broad",
+            "lane": 0,
+            "distanceAlongM": 40,
+            "targetSpeedMps": 7
+        },
+        {
+            "id": "b2",
+            "segmentId": "broad",
+            "lane": -1,
+            "distanceAlongM": 100,
+            "targetSpeedMps": 7
+        }
+    ]
+}

@@ -1,0 +1,63 @@
+{
+  "format": "road-network",
+  "version": 3,
+  "name": "City Grid (600 x 600 m) — V2V stress map",
+  "nodes": [
+    { "id": "a1", "position": [-300, 0, 300] },
+    { "id": "a2", "position": [-300, 0, 100] },
+    { "id": "a3", "position": [-300, 0, -100] },
+    { "id": "a4", "position": [-300, 0, -300] },
+    { "id": "b1", "position": [-100, 0, 300] },
+    { "id": "b2", "position": [-100, 0, 100] },
+    { "id": "b3", "position": [-100, 0, -100] },
+    { "id": "b4", "position": [-100, 0, -300] },
+    { "id": "c1", "position": [100, 0, 300] },
+    { "id": "c2", "position": [100, 0, 100] },
+    { "id": "c3", "position": [100, 0, -100] },
+    { "id": "c4", "position": [100, 0, -300] },
+    { "id": "d1", "position": [300, 0, 300] },
+    { "id": "d2", "position": [300, 0, 100] },
+    { "id": "d3", "position": [300, 0, -100] },
+    { "id": "d4", "position": [300, 0, -300] }
+  ],
+  "segments": [
+    { "id": "h1a", "startNodeId": "a1", "endNodeId": "b1", "controlPoints": [[-300, 0, 300], [-100, 0, 300]], "lanesForward": 1, "lanesBackward": 1, "laneWidthM": 3.5, "speedLimitKph": 50 },
+    { "id": "h1b", "startNodeId": "b1", "endNodeId": "c1", "controlPoints": [[-100, 0, 300], [100, 0, 300]], "lanesForward": 1, "lanesBackward": 1, "laneWidthM": 3.5, "speedLimitKph": 50 },
+    { "id": "h1c", "startNodeId": "c1", "endNodeId": "d1", "controlPoints": [[100, 0, 300], [300, 0, 300]], "lanesForward": 1, "lanesBackward": 1, "laneWidthM": 3.5, "speedLimitKph": 50 },
+    { "id": "h2a", "startNodeId": "a2", "endNodeId": "b2", "controlPoints": [[-300, 0, 100], [-100, 0, 100]], "lanesForward": 2, "lanesBackward": 2, "laneWidthM": 3.5, "speedLimitKph": 80 },
+    { "id": "h2b", "startNodeId": "b2", "endNodeId": "c2", "controlPoints": [[-100, 0, 100], [100, 0, 100]], "lanesForward": 2, "lanesBackward": 2, "laneWidthM": 3.5, "speedLimitKph": 80 },
+    { "id": "h2c", "startNodeId": "c2", "endNodeId": "d2", "controlPoints": [[100, 0, 100], [300, 0, 100]], "lanesForward": 2, "lanesBackward": 2, "laneWidthM": 3.5, "speedLimitKph": 80 },
+    { "id": "h3a", "startNodeId": "a3", "endNodeId": "b3", "controlPoints": [[-300, 0, -100], [-100, 0, -100]], "lanesForward": 1, "lanesBackward": 1, "laneWidthM": 3.5, "speedLimitKph": 50 },
+    { "id": "h3b", "startNodeId": "b3", "endNodeId": "c3", "controlPoints": [[-100, 0, -100], [100, 0, -100]], "lanesForward": 1, "lanesBackward": 1, "laneWidthM": 3.5, "speedLimitKph": 50 },
+    { "id": "h3c", "startNodeId": "c3", "endNodeId": "d3", "controlPoints": [[100, 0, -100], [300, 0, -100]], "lanesForward": 1, "lanesBackward": 1, "laneWidthM": 3.5, "speedLimitKph": 50 },
+    { "id": "h4a", "startNodeId": "a4", "endNodeId": "b4", "controlPoints": [[-300, 0, -300], [-100, 0, -300]], "lanesForward": 1, "lanesBackward": 1, "laneWidthM": 3.5, "speedLimitKph": 50 },
+    { "id": "h4b", "startNodeId": "b4", "endNodeId": "c4", "controlPoints": [[-100, 0, -300], [100, 0, -300]], "lanesForward": 1, "lanesBackward": 1, "laneWidthM": 3.5, "speedLimitKph": 50 },
+    { "id": "h4c", "startNodeId": "c4", "endNodeId": "d4", "controlPoints": [[100, 0, -300], [300, 0, -300]], "lanesForward": 1, "lanesBackward": 1, "laneWidthM": 3.5, "speedLimitKph": 50 },
+    { "id": "v1a", "startNodeId": "a1", "endNodeId": "a2", "controlPoints": [[-300, 0, 300], [-300, 0, 100]], "lanesForward": 1, "lanesBackward": 1, "laneWidthM": 3.5, "speedLimitKph": 50 },
+    { "id": "v1b", "startNodeId": "a2", "endNodeId": "a3", "controlPoints": [[-300, 0, 100], [-300, 0, -100]], "lanesForward": 1, "lanesBackward": 1, "laneWidthM": 3.5, "speedLimitKph": 50 },
+    { "id": "v1c", "startNodeId": "a3", "endNodeId": "a4", "controlPoints": [[-300, 0, -100], [-300, 0, -300]], "lanesForward": 1, "lanesBackward": 1, "laneWidthM": 3.5, "speedLimitKph": 50 },
+    { "id": "v2a", "startNodeId": "b1", "endNodeId": "b2", "controlPoints": [[-100, 0, 300], [-100, 0, 100]], "lanesForward": 2, "lanesBackward": 2, "laneWidthM": 3.5, "speedLimitKph": 80 },
+    { "id": "v2b", "startNodeId": "b2", "endNodeId": "b3", "controlPoints": [[-100, 0, 100], [-100, 0, -100]], "lanesForward": 2, "lanesBackward": 2, "laneWidthM": 3.5, "speedLimitKph": 80 },
+    { "id": "v2c", "startNodeId": "b3", "endNodeId": "b4", "controlPoints": [[-100, 0, -100], [-100, 0, -300]], "lanesForward": 2, "lanesBackward": 2, "laneWidthM": 3.5, "speedLimitKph": 80 },
+    { "id": "v3a", "startNodeId": "c1", "endNodeId": "c2", "controlPoints": [[100, 0, 300], [100, 0, 100]], "lanesForward": 1, "lanesBackward": 1, "laneWidthM": 3.5, "speedLimitKph": 50 },
+    { "id": "v3b", "startNodeId": "c2", "endNodeId": "c3", "controlPoints": [[100, 0, 100], [100, 0, -100]], "lanesForward": 1, "lanesBackward": 1, "laneWidthM": 3.5, "speedLimitKph": 50 },
+    { "id": "v3c", "startNodeId": "c3", "endNodeId": "c4", "controlPoints": [[100, 0, -100], [100, 0, -300]], "lanesForward": 1, "lanesBackward": 1, "laneWidthM": 3.5, "speedLimitKph": 50 },
+    { "id": "v4a", "startNodeId": "d1", "endNodeId": "d2", "controlPoints": [[300, 0, 300], [300, 0, 100]], "lanesForward": 1, "lanesBackward": 1, "laneWidthM": 3.5, "speedLimitKph": 50 },
+    { "id": "v4b", "startNodeId": "d2", "endNodeId": "d3", "controlPoints": [[300, 0, 100], [300, 0, -100]], "lanesForward": 1, "lanesBackward": 1, "laneWidthM": 3.5, "speedLimitKph": 50 },
+    { "id": "v4c", "startNodeId": "d3", "endNodeId": "d4", "controlPoints": [[300, 0, -100], [300, 0, -300]], "lanesForward": 1, "lanesBackward": 1, "laneWidthM": 3.5, "speedLimitKph": 50 }
+  ],
+  "obstructions": [],
+  "buildings": [
+    { "id": "blk1", "position": [-200, 0, 200], "size": [26, 18, 14], "rotationY": 0 },
+    { "id": "blk2", "position": [0, 0, 200], "size": [22, 16, 20], "rotationY": 0 },
+    { "id": "blk3", "position": [200, 0, 200], "size": [24, 18, 10], "rotationY": 0 },
+    { "id": "blk4", "position": [-200, 0, 0], "size": [20, 20, 16], "rotationY": 0 },
+    { "id": "blk5", "position": [200, 0, 0], "size": [26, 20, 12], "rotationY": 0 },
+    { "id": "blk6", "position": [-200, 0, -200], "size": [24, 16, 18], "rotationY": 0 },
+    { "id": "blk7", "position": [0, 0, -200], "size": [20, 18, 24], "rotationY": 0 },
+    { "id": "blk8", "position": [200, 0, -200], "size": [28, 22, 12], "rotationY": 0 }
+  ],
+  "vehicleSpawns": [
+    { "id": "spawn-ego", "segmentId": "h2b", "lane": 0, "distanceAlongM": 60, "isEgo": true }
+  ]
+}

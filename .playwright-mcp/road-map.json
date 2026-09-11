@@ -1,0 +1,748 @@
+{
+  "format": "road-network",
+  "version": 3,
+  "nodes": [
+    {
+      "id": "node-1",
+      "position": [
+        -5.976278078680096,
+        0,
+        -29.310335773751902
+      ]
+    },
+    {
+      "id": "node-2",
+      "position": [
+        42.42327714613309,
+        0,
+        -30.381166949174442
+      ]
+    },
+    {
+      "id": "node-3",
+      "position": [
+        41.938164013677465,
+        0,
+        20.81001183512781
+      ]
+    },
+    {
+      "id": "node-4",
+      "position": [
+        -9.959983313136533,
+        0,
+        25.498767542574015
+      ]
+    },
+    {
+      "id": "node-5",
+      "position": [
+        -10.32291480810565,
+        0,
+        57.85859228075166
+      ]
+    },
+    {
+      "id": "node-6",
+      "position": [
+        41.04909262486889,
+        0,
+        52.873238738560204
+      ]
+    },
+    {
+      "id": "node-7",
+      "position": [
+        -6.96820179292769,
+        0,
+        -76.37652010984148
+      ]
+    },
+    {
+      "id": "node-8",
+      "position": [
+        -47.59020414931233,
+        0,
+        -72.88227201575637
+      ]
+    },
+    {
+      "id": "node-9",
+      "position": [
+        -46.36013717959866,
+        0,
+        -32.786315692589156
+      ]
+    },
+    {
+      "id": "node-10",
+      "position": [
+        -46.846519486073824,
+        0,
+        27.812489235399838
+      ]
+    },
+    {
+      "id": "node-11",
+      "position": [
+        -50.356715958032325,
+        0,
+        54.91701874996199
+      ]
+    },
+    {
+      "id": "node-12",
+      "position": [
+        -49.6063460753144,
+        0,
+        62.06545388726563
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "id": "segment-1",
+      "startNodeId": "node-1",
+      "endNodeId": "node-2",
+      "controlPoints": [
+        [
+          -5.976278078680096,
+          0,
+          -29.310335773751902
+        ],
+        [
+          42.42327714613309,
+          0,
+          -30.381166949174442
+        ]
+      ],
+      "lanesForward": 1,
+      "lanesBackward": 1,
+      "laneWidthM": 3.5,
+      "speedLimitKph": 50
+    },
+    {
+      "id": "segment-2",
+      "startNodeId": "node-2",
+      "endNodeId": "node-3",
+      "controlPoints": [
+        [
+          42.42327714613309,
+          0,
+          -30.381166949174442
+        ],
+        [
+          41.938164013677465,
+          0,
+          20.81001183512781
+        ]
+      ],
+      "lanesForward": 1,
+      "lanesBackward": 1,
+      "laneWidthM": 3.5,
+      "speedLimitKph": 50
+    },
+    {
+      "id": "segment-3",
+      "startNodeId": "node-3",
+      "endNodeId": "node-4",
+      "controlPoints": [
+        [
+          41.938164013677465,
+          0,
+          20.81001183512781
+        ],
+        [
+          -9.959983313136533,
+          0,
+          25.498767542574015
+        ]
+      ],
+      "lanesForward": 1,
+      "lanesBackward": 1,
+      "laneWidthM": 3.5,
+      "speedLimitKph": 50
+    },
+    {
+      "id": "segment-4",
+      "startNodeId": "node-4",
+      "endNodeId": "node-1",
+      "controlPoints": [
+        [
+          -9.959983313136533,
+          0,
+          25.498767542574015
+        ],
+        [
+          -5.976278078680096,
+          0,
+          -29.310335773751902
+        ]
+      ],
+      "lanesForward": 1,
+      "lanesBackward": 1,
+      "laneWidthM": 3.5,
+      "speedLimitKph": 50
+    },
+    {
+      "id": "segment-5",
+      "startNodeId": "node-4",
+      "endNodeId": "node-5",
+      "controlPoints": [
+        [
+          -9.959983313136533,
+          0,
+          25.498767542574015
+        ],
+        [
+          -10.32291480810565,
+          0,
+          57.85859228075166
+        ]
+      ],
+      "lanesForward": 1,
+      "lanesBackward": 1,
+      "laneWidthM": 3.5,
+      "speedLimitKph": 50
+    },
+    {
+      "id": "segment-6",
+      "startNodeId": "node-5",
+      "endNodeId": "node-6",
+      "controlPoints": [
+        [
+          -10.32291480810565,
+          0,
+          57.85859228075166
+        ],
+        [
+          41.04909262486889,
+          0,
+          52.873238738560204
+        ]
+      ],
+      "lanesForward": 1,
+      "lanesBackward": 1,
+      "laneWidthM": 3.5,
+      "speedLimitKph": 50
+    },
+    {
+      "id": "segment-7",
+      "startNodeId": "node-6",
+      "endNodeId": "node-3",
+      "controlPoints": [
+        [
+          41.04909262486889,
+          0,
+          52.873238738560204
+        ],
+        [
+          41.938164013677465,
+          0,
+          20.81001183512781
+        ]
+      ],
+      "lanesForward": 1,
+      "lanesBackward": 1,
+      "laneWidthM": 3.5,
+      "speedLimitKph": 50
+    },
+    {
+      "id": "segment-8",
+      "startNodeId": "node-1",
+      "endNodeId": "node-7",
+      "controlPoints": [
+        [
+          -5.976278078680096,
+          0,
+          -29.310335773751902
+        ],
+        [
+          -6.96820179292769,
+          0,
+          -76.37652010984148
+        ]
+      ],
+      "lanesForward": 1,
+      "lanesBackward": 1,
+      "laneWidthM": 3.5,
+      "speedLimitKph": 50
+    },
+    {
+      "id": "segment-9",
+      "startNodeId": "node-7",
+      "endNodeId": "node-8",
+      "controlPoints": [
+        [
+          -6.96820179292769,
+          0,
+          -76.37652010984148
+        ],
+        [
+          -47.59020414931233,
+          0,
+          -72.88227201575637
+        ]
+      ],
+      "lanesForward": 1,
+      "lanesBackward": 1,
+      "laneWidthM": 3.5,
+      "speedLimitKph": 50
+    },
+    {
+      "id": "segment-10",
+      "startNodeId": "node-8",
+      "endNodeId": "node-9",
+      "controlPoints": [
+        [
+          -47.59020414931233,
+          0,
+          -72.88227201575637
+        ],
+        [
+          -46.36013717959866,
+          0,
+          -32.786315692589156
+        ]
+      ],
+      "lanesForward": 1,
+      "lanesBackward": 1,
+      "laneWidthM": 3.5,
+      "speedLimitKph": 50
+    },
+    {
+      "id": "segment-11",
+      "startNodeId": "node-9",
+      "endNodeId": "node-1",
+      "controlPoints": [
+        [
+          -46.36013717959866,
+          0,
+          -32.786315692589156
+        ],
+        [
+          -5.976278078680096,
+          0,
+          -29.310335773751902
+        ]
+      ],
+      "lanesForward": 1,
+      "lanesBackward": 1,
+      "laneWidthM": 3.5,
+      "speedLimitKph": 50
+    },
+    {
+      "id": "segment-12",
+      "startNodeId": "node-4",
+      "endNodeId": "node-10",
+      "controlPoints": [
+        [
+          -9.959983313136533,
+          0,
+          25.498767542574015
+        ],
+        [
+          -46.846519486073824,
+          0,
+          27.812489235399838
+        ]
+      ],
+      "lanesForward": 1,
+      "lanesBackward": 1,
+      "laneWidthM": 3.5,
+      "speedLimitKph": 50
+    },
+    {
+      "id": "segment-13",
+      "startNodeId": "node-10",
+      "endNodeId": "node-9",
+      "controlPoints": [
+        [
+          -46.846519486073824,
+          0,
+          27.812489235399838
+        ],
+        [
+          -46.36013717959866,
+          0,
+          -32.786315692589156
+        ]
+      ],
+      "lanesForward": 1,
+      "lanesBackward": 1,
+      "laneWidthM": 3.5,
+      "speedLimitKph": 50
+    },
+    {
+      "id": "segment-14",
+      "startNodeId": "node-10",
+      "endNodeId": "node-11",
+      "controlPoints": [
+        [
+          -46.846519486073824,
+          0,
+          27.812489235399838
+        ],
+        [
+          -50.356715958032325,
+          0,
+          54.91701874996199
+        ]
+      ],
+      "lanesForward": 1,
+      "lanesBackward": 1,
+      "laneWidthM": 3.5,
+      "speedLimitKph": 50
+    },
+    {
+      "id": "segment-15",
+      "startNodeId": "node-11",
+      "endNodeId": "node-12",
+      "controlPoints": [
+        [
+          -50.356715958032325,
+          0,
+          54.91701874996199
+        ],
+        [
+          -49.6063460753144,
+          0,
+          62.06545388726563
+        ]
+      ],
+      "lanesForward": 1,
+      "lanesBackward": 1,
+      "laneWidthM": 3.5,
+      "speedLimitKph": 50
+    },
+    {
+      "id": "segment-16",
+      "startNodeId": "node-12",
+      "endNodeId": "node-5",
+      "controlPoints": [
+        [
+          -49.6063460753144,
+          0,
+          62.06545388726563
+        ],
+        [
+          -10.32291480810565,
+          0,
+          57.85859228075166
+        ]
+      ],
+      "lanesForward": 1,
+      "lanesBackward": 1,
+      "laneWidthM": 3.5,
+      "speedLimitKph": 50
+    }
+  ],
+  "obstructions": [
+    {
+      "id": "obstruction-1",
+      "segmentId": "segment-12",
+      "lane": -1,
+      "distanceAlongM": 18.59402785333872,
+      "blocking": "partial"
+    },
+    {
+      "id": "obstruction-2",
+      "segmentId": "segment-12",
+      "lane": 0,
+      "distanceAlongM": 17.641693169847663,
+      "blocking": "full"
+    },
+    {
+      "id": "obstruction-3",
+      "segmentId": "segment-12",
+      "lane": -1,
+      "distanceAlongM": 9.751140003122158,
+      "blocking": "full"
+    },
+    {
+      "id": "obstruction-4",
+      "segmentId": "segment-12",
+      "lane": 0,
+      "distanceAlongM": 9.279292306957636,
+      "blocking": "full"
+    }
+  ],
+  "buildings": [
+    {
+      "id": "building-1",
+      "position": [
+        7.879037947565589,
+        0,
+        -14.925084270981534
+      ],
+      "size": [
+        16.265398250120768,
+        16.292016006626582,
+        12
+      ],
+      "rotationY": 0
+    },
+    {
+      "id": "building-2",
+      "position": [
+        -23.271787703394168,
+        0,
+        -14.74325905193483
+      ],
+      "size": [
+        19.83760010547444,
+        17.251218991606333,
+        12
+      ],
+      "rotationY": 0
+    },
+    {
+      "id": "building-3",
+      "position": [
+        -30.89414982614453,
+        0,
+        -51.31773535017541
+      ],
+      "size": [
+        19.507826057845982,
+        21.26673357517985,
+        12
+      ],
+      "rotationY": 0
+    },
+    {
+      "id": "building-4",
+      "position": [
+        -15.729153963952989,
+        0,
+        -52.99208468270753
+      ],
+      "size": [
+        6.648409495070496,
+        23.156070346617163,
+        12
+      ],
+      "rotationY": 0
+    },
+    {
+      "id": "building-5",
+      "position": [
+        8.550145975055385,
+        0,
+        -47.05946715002997
+      ],
+      "size": [
+        16.18173501435746,
+        21.62121844835159,
+        12
+      ],
+      "rotationY": 0
+    },
+    {
+      "id": "building-6",
+      "position": [
+        28.765281960952727,
+        0,
+        -50.0190707924151
+      ],
+      "size": [
+        19.89295669716988,
+        22.39901517669918,
+        12
+      ],
+      "rotationY": 0
+    },
+    {
+      "id": "building-7",
+      "position": [
+        9.477439641507946,
+        0,
+        2.917667818376227
+      ],
+      "size": [
+        20.05372012151293,
+        13.57217126140629,
+        12
+      ],
+      "rotationY": 0
+    },
+    {
+      "id": "building-8",
+      "position": [
+        27.43624200159115,
+        0,
+        -15.584530556617429
+      ],
+      "size": [
+        15.800268213382374,
+        17.25101067356216,
+        12
+      ],
+      "rotationY": 0
+    },
+    {
+      "id": "building-12",
+      "position": [
+        4.758078900669263,
+        0,
+        41.099375696010895
+      ],
+      "size": [
+        17.139619879259268,
+        18.075129849477428,
+        12
+      ],
+      "rotationY": 0
+    },
+    {
+      "id": "building-13",
+      "position": [
+        26.646151416452668,
+        0,
+        37.88672171815288
+      ],
+      "size": [
+        17.701977926882293,
+        19.172278056622297,
+        12
+      ],
+      "rotationY": 0
+    },
+    {
+      "id": "building-14",
+      "position": [
+        31.19889308527996,
+        0,
+        4.587085754850087
+      ],
+      "size": [
+        6.800611051210886,
+        22.54487872362276,
+        12
+      ],
+      "rotationY": 0
+    },
+    {
+      "id": "building-15",
+      "position": [
+        23.847248476470398,
+        0,
+        7.198110995868625
+      ],
+      "size": [
+        4.870224667699755,
+        18.189759100810747,
+        12
+      ],
+      "rotationY": 0
+    },
+    {
+      "id": "building-16",
+      "position": [
+        7.830613655055549,
+        0,
+        14.68786454055542
+      ],
+      "size": [
+        21.70461264096797,
+        5.589040048687892,
+        12
+      ],
+      "rotationY": 0
+    },
+    {
+      "id": "building-17",
+      "position": [
+        -26.19239443358087,
+        0,
+        7.927338027578392
+      ],
+      "size": [
+        21.906155344722546,
+        19.89295631102673,
+        12
+      ],
+      "rotationY": 0
+    },
+    {
+      "id": "building-18",
+      "position": [
+        -28.898043016876446,
+        0,
+        42.94292282569079
+      ],
+      "size": [
+        26.189971647492,
+        15.5399990770632,
+        12
+      ],
+      "rotationY": 0
+    }
+  ],
+  "vehicleSpawns": [
+    {
+      "id": "spawn-1",
+      "segmentId": "segment-4",
+      "lane": -1,
+      "distanceAlongM": 7.936425521912574,
+      "isEgo": true,
+      "targetSpeedMps": 8
+    },
+    {
+      "id": "spawn-2",
+      "segmentId": "segment-4",
+      "lane": 0,
+      "distanceAlongM": 7.0765209410336025,
+      "isEgo": false,
+      "targetSpeedMps": 8
+    },
+    {
+      "id": "spawn-3",
+      "segmentId": "segment-3",
+      "lane": 0,
+      "distanceAlongM": 44.55613358836974,
+      "isEgo": false,
+      "targetSpeedMps": 8
+    },
+    {
+      "id": "spawn-4",
+      "segmentId": "segment-8",
+      "lane": 0,
+      "distanceAlongM": 8.016552772761003,
+      "isEgo": false,
+      "targetSpeedMps": 8
+    },
+    {
+      "id": "spawn-5",
+      "segmentId": "segment-8",
+      "lane": -1,
+      "distanceAlongM": 38.996389825043444,
+      "isEgo": false,
+      "targetSpeedMps": 8
+    },
+    {
+      "id": "spawn-6",
+      "segmentId": "segment-11",
+      "lane": -1,
+      "distanceAlongM": 20.756722425807485,
+      "isEgo": false,
+      "targetSpeedMps": 8
+    },
+    {
+      "id": "spawn-7",
+      "segmentId": "segment-1",
+      "lane": -1,
+      "distanceAlongM": 28.53095763245167,
+      "isEgo": false,
+      "targetSpeedMps": 8
+    },
+    {
+      "id": "spawn-8",
+      "segmentId": "segment-2",
+      "lane": 0,
+      "distanceAlongM": 21.465752800427012,
+      "isEgo": false,
+      "targetSpeedMps": 8
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "format": "road-network",
+  "version": 2,
+  "name": "Sample — 3-way junction with curve",
+  "nodes": [
+    { "id": "n1", "position": [0, 0, 0] },
+    { "id": "n2", "position": [-140, 0, 0] },
+    { "id": "n3", "position": [0, 0, -160] },
+    { "id": "n4", "position": [150, 0, 70] }
+  ],
+  "segments": [
+    {
+      "id": "s1",
+      "startNodeId": "n2",
+      "endNodeId": "n1",
+      "controlPoints": [[-140, 0, 0], [0, 0, 0]],
+      "lanesForward": 1,
+      "lanesBackward": 1,
+      "laneWidthM": 3.5,
+      "speedLimitKph": 50
+    },
+    {
+      "id": "s2",
+      "startNodeId": "n1",
+      "endNodeId": "n3",
+      "controlPoints": [[0, 0, 0], [0, 0, -160]],
+      "lanesForward": 1,
+      "lanesBackward": 1,
+      "laneWidthM": 3.5,
+      "speedLimitKph": 50
+    },
+    {
+      "id": "s3",
+      "startNodeId": "n1",
+      "endNodeId": "n4",
+      "controlPoints": [[0, 0, 0], [55, 0, 12], [100, 0, 44], [150, 0, 70]],
+      "lanesForward": 2,
+      "lanesBackward": 2,
+      "laneWidthM": 3.5,
+      "speedLimitKph": 80
+    }
+  ],
+  "obstructions": [
+    { "id": "o1", "segmentId": "s1", "lane": 0, "distanceAlongM": 60, "blocking": "full" },
+    { "id": "o2", "segmentId": "s3", "lane": -1, "distanceAlongM": 90, "blocking": "partial" }
+  ],
+  "buildings": [
+    { "id": "b1", "position": [-82, 0, 8.6], "size": [10, 6, 12], "rotationY": 0 },
+    { "id": "b2", "position": [-70, 0, -9], "size": [10, 6, 12], "rotationY": 0 },
+    { "id": "b3", "position": [-70, 0, -15], "size": [8, 5, 9], "rotationY": 0 },
+    { "id": "b4", "position": [108, 0, 62], "size": [8, 6, 10], "rotationY": 0 },
+    { "id": "f1", "position": [30, 0, -60], "size": [14, 10, 18], "rotationY": 0 },
+    { "id": "f2", "position": [-60, 0, -45], "size": [12, 9, 10], "rotationY": 0.2 },
+    { "id": "f3", "position": [-110, 0, 30], "size": [10, 8, 14], "rotationY": 0.4 },
+    { "id": "f4", "position": [100, 0, -50], "size": [16, 12, 22], "rotationY": -0.3 }
+  ]
+}
