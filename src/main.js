@@ -117,33 +117,30 @@ function formatSensorReadout(ego, egoStack, lodManager, v2vManager, gpuCastEngin
   const camReadings = cameraSensor?.getLaneReadings?.();
 
   const lines = [
-    `speed        ${state.speedMps.toFixed(1)} m/s (${Math.round(state.speedMps * 3.6)} km/h)`,
-    `lane         ${lane.segmentId ?? '—'} · lane ${lane.lane ?? '—'}`,
-    `lat offset   ${lane.lateralOffsetM == null ? '—' : `${lane.lateralOffsetM.toFixed(2)} m`}`,
-    `heading err  ${lane.headingErrorRad == null ? '—' : `${((lane.headingErrorRad * 180) / Math.PI).toFixed(1)}°`}`,
+    '🛰️ SIMULATED GPS & ODOMETRY',
+    `  pos          X: ${state.position.x.toFixed(1).padStart(6)}m · Z: ${state.position.z.toFixed(1).padStart(6)}m`,
+    `  heading      ${((state.headingRad * 180) / Math.PI).toFixed(1)}° · speed ${state.speedMps.toFixed(1)} m/s (${Math.round(state.speedMps * 3.6)} km/h)`,
   ];
 
   if (autoDriveCtrl) {
     const tel = autoDriveCtrl.getTelemetry?.() ?? {};
-    lines.push(`auto-drive   ${autoDriveCtrl.enabled ? `🟢 ${autoDriveCtrl.status}` : '⚪ OFF'}`);
+    let statusBadge = '⚪ OFF';
     if (autoDriveCtrl.enabled) {
-      lines.push(`lane idx     ${tel.currentLaneIndex} -> ${tel.targetLaneIndex} ${tel.isLaneChanging ? '(CHANGING)' : '(LOCKED)'}`);
-      if (tel.obstacleDistanceM != null && tel.obstacleDistanceM < 40) {
-        lines.push(`obstacle     ${tel.obstacleDistanceM.toFixed(1)}m ahead`);
-      }
+      statusBadge = `🟢 ${autoDriveCtrl.status}`;
+    } else if (autoDriveCtrl.status === 'ARRIVED') {
+      statusBadge = '🛑 ARRIVED (PARKED)';
+    }
+    lines.push(`🤖 AUTO-DRIVE: ${statusBadge}`);
+    if (autoDriveCtrl.enabled && tel.obstacleDistanceM != null && tel.obstacleDistanceM < 40) {
+      lines.push(`  obstacle     ${tel.obstacleDistanceM.toFixed(1)}m ahead`);
     }
   }
 
   if (camReadings && camReadings.detected) {
-    lines.push(`cam lane ctr offset ${camReadings.lateralOffsetM.toFixed(2)} m · head ${((camReadings.headingErrorRad * 180) / Math.PI).toFixed(1)}°`);
+    lines.push(`📷 FRONT CAMERA: offset ${camReadings.lateralOffsetM.toFixed(2)}m · err ${((camReadings.headingErrorRad * 180) / Math.PI).toFixed(1)}°`);
   }
 
-  lines.push(
-    `traffic      ${counts.active} active · ${counts.passive} passive · ${counts.culled} culled`,
-    `v2v          ${frame ? frame.v2vNeighbors.length : 0} neighbors ≤ ${v2vManager.radiusM} m`,
-    `backend      ${backend}`,
-    'proximity (analog distance)',
-  );
+  lines.push('📡 PROXIMITY SENSORS (Analog Distance)');
   for (const ray of egoStack.proximity.rays) {
     const distance = proximity.proximityM[ray.name];
     const kind = proximity.hitKind[ray.name];
@@ -589,9 +586,32 @@ function createSimulationSession(source) {
       window.addEventListener('keydown', onSimKeyDown);
       engine.renderer.domElement.addEventListener('pointerdown', onCanvasPointerDown);
 
+      const hudEl = document.createElement('div');
+      hudEl.id = 'v2v-telemetry-hud';
+      hudEl.style.position = 'fixed';
+      hudEl.style.bottom = '18px';
+      hudEl.style.left = '18px';
+      hudEl.style.padding = '12px 16px';
+      hudEl.style.borderRadius = '12px';
+      hudEl.style.background = 'rgba(15, 23, 42, 0.90)';
+      hudEl.style.border = '1px solid rgba(148, 163, 184, 0.25)';
+      hudEl.style.backdropFilter = 'blur(12px)';
+      hudEl.style.color = '#e2e8f0';
+      hudEl.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+      hudEl.style.fontSize = '11px';
+      hudEl.style.lineHeight = '1.45';
+      hudEl.style.zIndex = '2000';
+      hudEl.style.pointerEvents = 'none';
+      hudEl.style.whiteSpace = 'pre';
+      hudEl.style.boxShadow = '0 10px 30px rgba(0,0,0,0.5)';
+      document.body.appendChild(hudEl);
+
       cleanupSimInputs = () => {
         window.removeEventListener('keydown', onSimKeyDown);
         engine.renderer.domElement.removeEventListener('pointerdown', onCanvasPointerDown);
+        if (hudEl && hudEl.parentNode) {
+          hudEl.parentNode.removeChild(hudEl);
+        }
       };
 
       navigationSystem = new NavigationSystem({
@@ -606,13 +626,11 @@ function createSimulationSession(source) {
         const sensorVisualizer = new SensorVisualizer(engine, { sensorArray: egoStack.proximity });
         const frontCameraSensor = new FrontCameraSensor(engine, { vehicle: ego });
 
-        // Auto-drive controller: sensor-based autonomous navigation with lane changing
+        // Auto-drive controller: autonomous navigation using ONLY simulated GPS, minimap route, and sensors
         autoDriveController = new AutoDriveController({
           navigationSystem,
-          roadNetwork,
           cruiseSpeedMps: 13.9,
           ego,
-          vehicles: () => vehicleFactory.vehicles,
         });
         vehicleController.setAutoDriveController(autoDriveController);
 
@@ -626,7 +644,7 @@ function createSimulationSession(source) {
         vehicleController.onAutoDriveDisengaged = (status) => {
           controlPanel.updateAutoDriveToggle(false);
           if (status === 'ARRIVED') {
-            navigationSystem?.showToast('🎉 Destination Reached! Holding Brake Active.', 4500);
+            navigationSystem?.showToast('🎉 Destination Reached! Vehicle Safely Parked.', 5000);
             navigationSystem?.clearCheckpoint?.();
           } else {
             navigationSystem?.showToast('🛑 Auto Drive Disengaged');
@@ -742,17 +760,17 @@ function createSimulationSession(source) {
         readoutTimer += dt;
         if (readoutTimer >= 0.1) {
           readoutTimer = 0;
-          controlPanel.setSensorReadout(
-            formatSensorReadout(
-              ego,
-              egoExtras.egoStack,
-              lodManager,
-              v2vManager,
-              gpuCastEngine,
-              egoExtras.frontCameraSensor,
-              autoDriveController
-            )
+          const text = formatSensorReadout(
+            ego,
+            egoExtras.egoStack,
+            lodManager,
+            v2vManager,
+            gpuCastEngine,
+            egoExtras.frontCameraSensor,
+            autoDriveController
           );
+          controlPanel.setSensorReadout(text);
+          if (hudEl) hudEl.textContent = text;
         }
       };
 

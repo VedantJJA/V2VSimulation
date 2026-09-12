@@ -68,6 +68,10 @@ export class KinematicBicycleModel {
     if (effBrake > 0) {
       const decel = effBrake * Math.max(this.brakeDecelMps2, 14) * dt;
       speed = Math.abs(speed) <= decel ? 0 : speed - Math.sign(speed) * decel;
+      // Absolute stop clamp: when braking firmly at low speed, lock to zero
+      if (effBrake >= 0.85 && Math.abs(speed) < 0.35) {
+        speed = 0;
+      }
     } else if (effThrottle !== 0) {
       speed += effThrottle * this.engineAccelMps2 * dt;
     } else {

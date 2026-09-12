@@ -58,10 +58,11 @@ export class ProximitySensorArray {
     /** @type {import('./GPUCastEngine.js').GPUCastEngine | null} */
     this._gpuEngine = null;
 
-    this.readings = { proximityM: {}, hitKind: {} };
+    this.readings = { proximityM: {}, hitKind: {}, analog: {} };
     for (const ray of this.rays) {
       this.readings.proximityM[ray.name] = maxRangeM;
       this.readings.hitKind[ray.name] = 'none';
+      this.readings.analog[ray.name] = 0;
     }
 
     /** Last-cast ray geometry — consumed by SensorVisualizer. */
@@ -129,8 +130,10 @@ export class ProximitySensorArray {
         ignoreVehicle: this.vehicle,
       });
       segment.hit = hit;
-      this.readings.proximityM[ray.name] = hit ? hit.distanceM : this.maxRangeM;
+      const dist = hit ? hit.distanceM : this.maxRangeM;
+      this.readings.proximityM[ray.name] = dist;
       this.readings.hitKind[ray.name] = hit ? hit.kind : 'none';
+      this.readings.analog[ray.name] = hit ? Math.max(0, Math.min(1, 1 - dist / this.maxRangeM)) : 0;
     }
     return this.readings;
   }

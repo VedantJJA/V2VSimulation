@@ -198,6 +198,10 @@ export class ControlPanel {
       else frontCamera.enabled = v;
     });
 
+    // Sensor & Telemetry Readout (10 Hz update from main.js)
+    const readoutState = { readout: 'Initializing sensors...' };
+    this._sensorReadoutController = folder.add(readoutState, 'readout').name('Telemetry').listen().disable();
+
     folder.open();
     this._sensorsFolder = folder;
   }

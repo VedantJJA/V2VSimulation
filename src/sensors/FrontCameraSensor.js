@@ -110,6 +110,11 @@ export class FrontCameraSensor {
       detected: false,
       lateralOffsetM: 0,
       headingErrorRad: 0,
+      distToLeftEdgeM: 3.5,
+      distToRightEdgeM: 3.5,
+      distToCurbAheadM: 50.0,
+      isNearRoadEdge: false,
+      isOnRoad: true,
     };
     this._pixelBuffer = new Uint8Array(resolution * resolution * 4);
     this._laneScanTimer = 0;
@@ -242,51 +247,76 @@ export class FrontCameraSensor {
     const near = scanRow(0.20);
     const far = scanRow(0.35);
 
+    // Transverse curb detection directly in front of bumper (for U-turns and road boundary awareness)
+    let distToCurbAheadM = 50.0;
+    const midX = Math.floor(W / 2);
+    // Scan vertical strip in front of bumper: y from 0.08 (~0.8m) to 0.40 (~7.0m)
+    for (let y = Math.floor(0.08 * H); y <= Math.floor(0.40 * H); y++) {
+      let edgeCount = 0;
+      const rowOffset = y * W * 4;
+      for (let x = midX - 16; x <= midX + 16; x++) {
+        if (this._pixelBuffer[rowOffset + x * 4] > 80) {
+          edgeCount++;
+        }
+      }
+      // If a horizontal edge spans across the bumper center, it's a curb or road boundary ahead!
+      if (edgeCount >= 8) {
+        const rowNorm = y / H;
+        distToCurbAheadM = 0.8 + (rowNorm / 0.35) * 5.0;
+        break;
+      }
+    }
+
+    let lateralOffsetM = 0;
+    let headingErrorRad = 0;
+    let detected = false;
+    let metersPerPx = 3.7 / (W * 0.45);
+
     if (near.leftX !== -1 && near.rightX !== -1) {
       const laneWidthPx = Math.max(20, near.rightX - near.leftX);
       const visualCenterPx = (near.leftX + near.rightX) / 2;
       const offsetPx = visualCenterPx - near.midX;
 
       // Standard lane is ~3.7m wide
-      const metersPerPx = 3.7 / laneWidthPx;
-      const lateralOffsetM = offsetPx * metersPerPx;
+      metersPerPx = 3.7 / laneWidthPx;
+      lateralOffsetM = offsetPx * metersPerPx;
+      detected = true;
 
-      let headingErrorRad = 0;
       if (far.leftX !== -1 && far.rightX !== -1) {
         const farCenterPx = (far.leftX + far.rightX) / 2;
         const deltaX = (farCenterPx - visualCenterPx) * metersPerPx;
         const deltaY = 6.0; // distance ahead between near and far scan bands in meters
         headingErrorRad = Math.atan2(deltaX, deltaY);
       }
-
-      this.laneReadings = {
-        detected: true,
-        lateralOffsetM: clamp(lateralOffsetM, -3.5, 3.5),
-        headingErrorRad: clamp(headingErrorRad, -0.6, 0.6),
-      };
     } else if (near.leftX !== -1) {
-      // Estimated from single left lane line
       const estWidthPx = W * 0.45;
       const visualCenterPx = near.leftX + estWidthPx / 2;
-      const metersPerPx = 3.7 / estWidthPx;
-      this.laneReadings = {
-        detected: true,
-        lateralOffsetM: clamp((visualCenterPx - near.midX) * metersPerPx, -3.5, 3.5),
-        headingErrorRad: 0,
-      };
+      metersPerPx = 3.7 / estWidthPx;
+      lateralOffsetM = (visualCenterPx - near.midX) * metersPerPx;
+      detected = true;
     } else if (near.rightX !== -1) {
-      // Estimated from single right lane line
       const estWidthPx = W * 0.45;
       const visualCenterPx = near.rightX - estWidthPx / 2;
-      const metersPerPx = 3.7 / estWidthPx;
-      this.laneReadings = {
-        detected: true,
-        lateralOffsetM: clamp((visualCenterPx - near.midX) * metersPerPx, -3.5, 3.5),
-        headingErrorRad: 0,
-      };
-    } else {
-      this.laneReadings.detected = false;
+      metersPerPx = 3.7 / estWidthPx;
+      lateralOffsetM = (visualCenterPx - near.midX) * metersPerPx;
+      detected = true;
     }
+
+    const distToLeftEdgeM = near.leftX !== -1 ? Math.max(0.1, (near.midX - near.leftX) * metersPerPx) : 4.0;
+    const distToRightEdgeM = near.rightX !== -1 ? Math.max(0.1, (near.rightX - near.midX) * metersPerPx) : 4.0;
+    const isNearRoadEdge = distToLeftEdgeM < 1.3 || distToRightEdgeM < 1.3 || distToCurbAheadM < 2.0;
+    const isOnRoad = distToLeftEdgeM > 0.3 && distToRightEdgeM > 0.3 && distToCurbAheadM > 0.9;
+
+    this.laneReadings = {
+      detected,
+      lateralOffsetM: clamp(lateralOffsetM, -3.5, 3.5),
+      headingErrorRad: clamp(headingErrorRad, -0.6, 0.6),
+      distToLeftEdgeM,
+      distToRightEdgeM,
+      distToCurbAheadM,
+      isNearRoadEdge,
+      isOnRoad,
+    };
   }
 
   /** Picture-in-picture overlay — runs after the main render pass. */

@@ -1,60 +1,57 @@
 import { clamp, wrapPi } from '../utils/MathUtils.js';
-import { SplineUtils } from '../road/SplineUtils.js';
 
 /**
  * AutoDriveController — Autonomous driving system for V2V simulation.
  *
+ * SENSORY ARCHITECTURE (Zero-Cheat Policy):
+ * This controller perceives the world exclusively through real autonomous vehicle data channels:
+ * 1. SIMULATED GPS: Vehicle position (X, Z), heading, and odometry speed.
+ * 2. MINIMAP / NAVIGATION ROUTE: GPS polyline waypoints and target destination coordinates.
+ * 3. ONBOARD SENSORS:
+ *    - Proximity Sensor Array: Continuous analog distance readings (meters) for obstacles.
+ *    - Front Camera: Vision-based lane center offset and heading error.
+ *
  * Core Capabilities:
  * 1. Dual Mode Operation:
- *    - ROUTE MODE: Full GPS waypoint route following, multi-segment intersections, U-turns.
- *      Waypoints from RoadRouter are already centered in the driving lane (lateralShift = 0).
- *    - LANE KEEP MODE: Free cruising along road network with lane centering when no checkpoint is set.
- * 2. Dedicated Heading-Aware U-Turn State Machine:
- *    - Activates ONLY when target route is truly behind the vehicle (fwdDot < -0.2 and heading error > 118°).
- *    - Prevents false triggers at ordinary 90° intersection corners.
- *    - Decelerates rapidly to crawl speed (~1.8–2.2 m/s).
- *    - Locks steering into turnaround arc across opposing lanes.
- *    - Multi-point turn (3-point reverse K-turn) fallback if front clearance is restricted (< 3.5m).
- *    - Smoothly transitions back to cruise upon heading alignment.
- * 3. Dynamic Obstruction Evasion & Multi-Lane Selection:
- *    - In Route Mode, cruises right down the route waypoints (lateralShift = 0).
- *    - If obstacle detected (< 18m) and adjacent lane is clear, executes smooth S-curve evasion.
- *    - Safely stops at 5.0m buffer distance if blocked.
- *    - Automatically returns to nominal route lane once obstacle is cleared.
- * 4. Front Camera Lane Centering Fusion:
- *    - Fuses front camera visual edge detection for micro-centering adjustments.
- * 5. Instant Rollout & Predictive Curve Speed Governor:
- *    - Starts decisively from a dead stop (throttle >= 0.35, brake = 0).
- *    - Limits lateral acceleration on curves, stops accurately at destination.
+ *    - ROUTE MODE: Full GPS waypoint navigation, intersection turns, proactive curve braking.
+ *    - FREE DRIVE MODE: Vision-based lane centering via Front Camera and GPS heading.
+ * 2. Dedicated Heading-Aware U-Turn & K-Turn State Machine:
+ *    - Activates ONLY when target destination is behind vehicle (fwdDot < -0.2, heading error > 118°).
+ *    - Decelerates rapidly to crawl speed (~1.8 m/s).
+ *    - Narrow road clearance triggers 3-point reverse K-turn; wide clearance executes continuous turnaround arc.
+ * 3. Dynamic Obstacle Evasion & Headway Braking:
+ *    - Proximity distance sensors continuously measure forward and side clearances.
+ *    - Proportional analog braking ramps down speed smoothly, stopping safely at 5.0m buffer.
+ *    - Smooth S-curve lane shift if adjacent clearance is open (> 11m).
+ * 4. Solid Destination Arrival & Park Hold:
+ *    - Terminal arrival zone enforces forceful deceleration to a complete standstill.
+ *    - Latches permanently into 'ARRIVED' status with 100% holding brake.
  */
 export class AutoDriveController {
   /**
    * @param {object} options
    * @param {import('../navigation/NavigationSystem.js').NavigationSystem} [options.navigationSystem]
-   * @param {import('../road/RoadNetwork.js').RoadNetwork} [options.roadNetwork]
    * @param {number} [options.cruiseSpeedMps] target cruise speed (default ~50 km/h)
    * @param {number} [options.lookaheadM] pure-pursuit lookahead distance
    * @param {number} [options.arrivalRadiusM] distance to destination for stop
+   * @param {object} [options.ego] ego vehicle reference
    */
   constructor({
     navigationSystem = null,
-    roadNetwork = null,
     cruiseSpeedMps = 13.9,
     lookaheadM = 16.0,
-    arrivalRadiusM = 6.5,
+    arrivalRadiusM = 7.0,
     ego = null,
-    vehicles = null,
   } = {}) {
     this.navigationSystem = navigationSystem;
-    this.roadNetwork = roadNetwork;
     this.cruiseSpeedMps = cruiseSpeedMps;
     this.lookaheadM = lookaheadM;
     this.arrivalRadiusM = arrivalRadiusM;
     this.ego = ego;
-    this.vehicles = vehicles;
 
     this.enabled = false;
     this.status = 'IDLE'; // IDLE | CRUISING | UTURN_DECEL | UTURN_TURNING | K_TURN_FORWARD_1 | K_TURN_STOP_1 | K_TURN_REVERSE_2 | K_TURN_STOP_2 | K_TURN_FORWARD_3 | ARRIVED | BLOCKED
+    this._isArrived = false;
 
     // Path tracking state
     this._closestSegIdx = 0;
@@ -67,11 +64,13 @@ export class AutoDriveController {
     // U-turn & K-turn state machine
     this.uTurnActive = false;
     this._uTurnTimer = 0;
-    this._uTurnTurnDirection = -1; // -1 = turn left across centerline in right-hand traffic
+    this._uTurnTurnDirection = -1;
     this._kTurnTimer = 0;
 
-    // Obstacle evasion & dynamic lane shifting
+    // Obstacle evasion, dynamic lane shifting & overtaking
     this.isEvading = false;
+    this.isOvertaking = false;
+    this._overtakeTimer = 0;
     this.evasionProgress = 1.0;
     this.evasiveShift = 0;
     this.targetEvasiveShift = 0;
@@ -79,13 +78,9 @@ export class AutoDriveController {
     this.laneWidthM = 3.5;
     this._lateralShift = 0;
 
-    // Obstacle tracking
+    // Obstacle tracking (from real proximity distance sensors)
     this._lastObstacleDist = 50.0;
     this._isBlocked = false;
-  }
-
-  setVehicles(vehicles) {
-    this.vehicles = vehicles;
   }
 
   setEgo(ego) {
@@ -106,6 +101,7 @@ export class AutoDriveController {
     if (!this.enabled) {
       this.reset();
     } else {
+      this._isArrived = false;
       this.status = 'CRUISING';
     }
     return { enabled: this.enabled, status: this.status };
@@ -113,6 +109,7 @@ export class AutoDriveController {
 
   reset() {
     this.status = 'IDLE';
+    this._isArrived = false;
     this._closestSegIdx = 0;
     this._steerSmooth = 0;
     this._prevHeadingError = 0;
@@ -122,6 +119,8 @@ export class AutoDriveController {
     this._uTurnTimer = 0;
     this._kTurnTimer = 0;
     this.isEvading = false;
+    this.isOvertaking = false;
+    this._overtakeTimer = 0;
     this.evasionProgress = 1.0;
     this.evasiveShift = 0;
     this.targetEvasiveShift = 0;
@@ -140,45 +139,14 @@ export class AutoDriveController {
       uTurnActive: this.uTurnActive,
       uTurnTurnDirection: this._uTurnTurnDirection,
       isLaneChanging: this.isEvading,
-      currentLaneIndex: this.targetEvasiveShift !== 0 ? 0 : 1,
-      targetLaneIndex: this.targetEvasiveShift !== 0 ? 0 : 1,
+      isOvertaking: this.isOvertaking,
+      currentLaneIndex: this.targetEvasiveShift > 0 ? 1 : 0,
+      targetLaneIndex: this.targetEvasiveShift > 0 ? 1 : 0,
       laneChangeProgress: this.evasionProgress,
       lateralShift: this._lateralShift,
       obstacleDistanceM: this._lastObstacleDist,
       isBlocked: this._isBlocked,
     };
-  }
-
-  /**
-   * Find nearest road segment in network.
-   * @private
-   */
-  _findNearestSegment(pos) {
-    const network = this.roadNetwork || this.navigationSystem?.roadNetwork;
-    if (!network?.segments) return null;
-
-    let bestSeg = null;
-    let bestDistSq = Infinity;
-    let bestT = 0;
-
-    for (const seg of network.segments.values()) {
-      const curve = seg.getCurve();
-      const len = seg.lengthM;
-      const samples = Math.max(6, Math.ceil(len / 15));
-      for (let s = 0; s <= samples; s++) {
-        const t = s / samples;
-        const pt = curve.getPointAt(t);
-        const dSq = (pt.x - pos.x) ** 2 + (pt.z - pos.z) ** 2;
-        if (dSq < bestDistSq) {
-          bestDistSq = dSq;
-          bestSeg = seg;
-          bestT = t;
-        }
-      }
-    }
-
-    if (!bestSeg) return null;
-    return { segment: bestSeg, t: bestT, distSq: bestDistSq };
   }
 
   /**
@@ -293,11 +261,17 @@ export class AutoDriveController {
    * Main auto-drive update loop.
    *
    * @param {number} dt delta time in seconds
-   * @param {object} sensorData ego sensor readings
-   * @param {object} egoState { position, headingRad, speedMps } from motionModel
+   * @param {object} sensorData ego sensor readings (proximityReadings, cameraReadings)
+   * @param {object} egoState { position, headingRad, speedMps } from simulated GPS / odometry
    * @returns {{ throttle: number, steering: number, brake: number }}
    */
   update(dt, sensorData = {}, egoState = null) {
+    // ── LATCHED ARRIVAL / PARKED STATE ──────────────────────────────
+    if (this._isArrived) {
+      this.status = 'ARRIVED';
+      return { throttle: 0, steering: 0, brake: 1.0 };
+    }
+
     if (!this.enabled || !egoState) {
       return { throttle: 0, steering: 0, brake: 0 };
     }
@@ -316,48 +290,21 @@ export class AutoDriveController {
       this._evasionCooldown -= dt;
     }
 
-    // ── 1. PROXIMITY SENSOR & DIRECT VEHICLE HEADWAY EVALUATION ───────
+    // ── 1. PROXIMITY SENSOR READINGS (Continuous Analog Headway) ─────
     const prox = sensorData.proximityReadings?.proximityM || {};
-    const rawFront = prox.front ?? 50;
-    const cornerMin = Math.min(prox['front-left'] ?? 50, prox['front-right'] ?? 50);
-    const rayDist = cornerMin < 3.8 ? Math.min(rawFront, cornerMin) : rawFront;
-
-    // Failsafe 2D distance checks to other vehicles (Ego vs NPCs)
-    let leadCarDist = 50.0;
-    const vehicleList = typeof this.vehicles === 'function' ? this.vehicles() : (this.vehicles || sensorData.vehicles || []);
-    if (vehicleList && vehicleList.length > 0) {
-      for (const other of vehicleList) {
-        if (!other || other === this.ego || !other.motionModel) continue;
-        const oState = other.motionModel.getState?.();
-        if (!oState || !oState.position) continue;
-        const dx = oState.position.x - egoPos.x;
-        const dz = oState.position.z - egoPos.z;
-        const dSq = dx * dx + dz * dz;
-        if (dSq < 0.2 || dSq > 2500) continue;
-
-        const dLong = dx * egoFwdX + dz * egoFwdZ;
-        const dLat = dx * egoRightX + dz * egoRightZ;
-
-        // Vehicle in forward driving corridor (±2.2m lateral, up to 45m ahead)
-        if (dLong > 0.5 && dLong < 45.0 && Math.abs(dLat) < 2.2) {
-          const bumperDist = Math.max(0, dLong - 4.4); // account for vehicle lengths
-          if (bumperDist < leadCarDist) {
-            leadCarDist = bumperDist;
-          }
-        }
-      }
-    }
-
-    const fwdDist = Math.min(rayDist, leadCarDist);
+    const rawFront = prox.front ?? 50.0;
+    const cornerMin = Math.min(prox['front-left'] ?? 50.0, prox['front-right'] ?? 50.0);
+    const fwdDist = cornerMin < 4.0 ? Math.min(rawFront, cornerMin) : rawFront;
     this._lastObstacleDist = fwdDist;
 
-    const leftDist = prox.left ?? prox['side-left'] ?? 50;
-    const rightDist = prox.right ?? prox['side-right'] ?? 50;
-    const frontLeftDist = prox['front-left'] ?? 50;
-    const frontRightDist = prox['front-right'] ?? 50;
-    const rearDist = prox.rear ?? 50;
+    const leftDist = prox.left ?? prox['side-left'] ?? 50.0;
+    const rightDist = prox.right ?? prox['side-right'] ?? 50.0;
+    const frontLeftDist = prox['front-left'] ?? 50.0;
+    const frontRightDist = prox['front-right'] ?? 50.0;
+    const rearDist = prox.rear ?? 50.0;
+    const cam = sensorData.cameraReadings;
 
-    // Check if we have a destination route or are free-cruising in lane-keep
+    // Check if we have a destination route or are in camera free-cruising
     const navState = this.navigationSystem?.getNavState?.();
     const hasRoute = !!(navState?.hasCheckpoint && navState?.route?.waypoints?.length >= 2);
     const waypoints = hasRoute ? navState.route.waypoints : null;
@@ -369,33 +316,36 @@ export class AutoDriveController {
     this._maxCurveDev = 0;
     this._distToTurn = 999;
 
-    // Front bumper position (effective steering axle point)
+    // Front bumper position (effective steering axle reference)
     const bumperX = egoPos.x + egoFwdX * 2.1;
     const bumperZ = egoPos.z + egoFwdZ * 2.1;
 
-    // ── 2. DESTINATION ROUTE TRACKING OR LANE-KEEP CRUISE ─────────────
+    // ── 2. DESTINATION ROUTE TRACKING OR CAMERA FREE CRUISE ───────────
     if (hasRoute) {
-      // Destination arrival check
       const finalWp = waypoints[waypoints.length - 1];
       distToDestination = Math.hypot(finalWp.x - egoPos.x, finalWp.z - egoPos.z);
-
-      if (distToDestination < this.arrivalRadiusM) {
-        this._arrivedTimer += dt;
-        if (egoSpeed <= 0.45 || distToDestination < 2.5 || this._arrivedTimer > 0.45) {
-          this.status = 'ARRIVED';
-          this.enabled = false;
-          this._arrivedTimer = 0;
-          return { throttle: 0, steering: 0, brake: 1.0 };
-        }
-        // Within terminal arrival zone: decelerate forcefully to standstill
-        return { throttle: 0, steering: 0, brake: 1.0 };
-      }
-      this._arrivedTimer = 0;
 
       // Project front bumper onto route polyline
       const proj = this._projectEgoOntoPolyline({ x: bumperX, z: bumperZ }, waypoints);
       closestPt = proj.closestPt;
       const segIdx = proj.segIdx;
+
+      // ── TERMINAL ARRIVAL & SOLID STOP ──────────────────────────────
+      // Reached destination checkpoint or end of route polyline
+      const atPolylineEnd = proj.segIdx >= waypoints.length - 2 && distToDestination < 10.0;
+      if (distToDestination <= this.arrivalRadiusM || atPolylineEnd) {
+        this._arrivedTimer += dt;
+        if (egoSpeed <= 0.40 || distToDestination < 2.8 || this._arrivedTimer > 0.40) {
+          this.status = 'ARRIVED';
+          this._isArrived = true;
+          this.enabled = false;
+          this._arrivedTimer = 0;
+          return { throttle: 0, steering: 0, brake: 1.0 };
+        }
+        // Forceful deceleration within arrival radius
+        return { throttle: 0, steering: 0, brake: 1.0 };
+      }
+      this._arrivedTimer = 0;
 
       // Lookahead curvature evaluation (sample waypoints 4m, 8m, 12m, 16m, 22m, 30m, 38m ahead)
       let maxCurveDev = 0;
@@ -415,9 +365,8 @@ export class AutoDriveController {
       this._distToTurn = distToTurn;
 
       // Curvature-adaptive lookahead:
-      // On straight roads, use 5 to 13m for smooth stability.
-      // When a turn is approaching or active, restrict lookahead to 3.5 - 4.8m so the car
-      // tracks the curve faithfully and NEVER cuts corners early off the road!
+      // On straights: 5.0 to 13.0m for stability.
+      // On approaching turns: shrink to 3.5 - 4.8m so the vehicle faithfully hugs the lane arc.
       const baseLookahead = clamp(5.0 + egoSpeed * 0.45, 4.2, 13.0);
       let adaptiveLookahead = baseLookahead;
       if (distToTurn < 25.0) {
@@ -442,15 +391,8 @@ export class AutoDriveController {
       const headingToTarget = Math.atan2(toTargetX, -toTargetZ);
       const headingErrorToTarget = wrapPi(headingToTarget - egoHeading);
 
-      // ── 3. HEADING-AWARE U-TURN & REAL-LIFE 3-POINT TURN ──────────────
-      // U-turn trigger: target is BEHIND vehicle (fwdDot < -0.2) AND heading error > 118° (2.05 rad)
+      // ── 3. HEADING-AWARE U-TURN & 3-POINT K-TURN ─────────────────────
       const isTurnaroundNeeded = fwdDot < -0.2 && Math.abs(headingErrorToTarget) > 2.05;
-
-      const currentSeg = sensorData.currentSegment || this._findNearestSegment(egoPos)?.segment;
-      const numLanes = currentSeg?.lanesForward ?? 1;
-      const numBwd = currentSeg?.lanesBackward ?? 1;
-      const totalLanes = numLanes + numBwd;
-      const isNarrowRoad = totalLanes <= 2;
 
       if (isTurnaroundNeeded && !this.uTurnActive) {
         this.uTurnActive = true;
@@ -462,12 +404,12 @@ export class AutoDriveController {
       if (this.uTurnActive) {
         // Phase 0: Rapid deceleration to crawl speed before initiating turn
         if (this.status === 'UTURN_DECEL') {
-          if (egoSpeed > 1.6) {
-            this._steerSmooth = clamp(this._uTurnTurnDirection * 0.35, -1.0, 1.0);
-            return { throttle: 0, steering: this._steerSmooth, brake: 0.85 };
+          if (egoSpeed > 0.8) {
+            this._steerSmooth = clamp(this._uTurnTurnDirection * 0.25, -1.0, 1.0);
+            return { throttle: 0, steering: this._steerSmooth, brake: 0.95 };
           }
-          // On narrow roads, execute a real-life 3-point turn (K-turn)
-          this.status = isNarrowRoad ? 'K_TURN_FORWARD_1' : 'UTURN_TURNING';
+          // Strictly use 3-point K-turn on standard roads to prevent driving off the asphalt
+          this.status = 'K_TURN_FORWARD_1';
           this._kTurnTimer = 0;
         }
 
@@ -478,13 +420,26 @@ export class AutoDriveController {
           this._steerSmooth = steer;
 
           const angleTurned = Math.PI - Math.abs(headingErrorToTarget);
-          if (angleTurned > 1.15 || fwdDist < 2.5 || this._kTurnTimer > 3.0) {
+          // Strictly enforce road boundaries using camera and distance sensors:
+          // Stop forward movement if:
+          // 1. Front camera detects curb/road edge < 1.7m ahead
+          // 2. Camera detects vehicle is getting near road edge
+          // 3. Proximity sensor fwdDist < 2.5m
+          // 4. Sufficient angle turned (>= 0.95 rad / 55°)
+          // 5. Hard time cap of 1.35s (at ~1.0 m/s crawl, max 1.35m travel)
+          const curbAhead = cam?.distToCurbAheadM != null && cam.distToCurbAheadM < 1.7;
+          const nearEdge = (cam?.isNearRoadEdge || cam?.distToRightEdgeM < 1.1 || cam?.distToLeftEdgeM < 1.1) && this._kTurnTimer > 0.3;
+          const obstAhead = fwdDist < 2.5;
+          const turnedEnough = angleTurned > 0.95;
+          const timeOut = this._kTurnTimer > 1.35;
+
+          if (curbAhead || nearEdge || obstAhead || turnedEnough || timeOut) {
             this.status = 'K_TURN_STOP_1';
-            this._kTurnTimer = 0.35; // pause for gear shift to reverse
+            this._kTurnTimer = 0.30; // pause for gear shift to reverse
             return { throttle: 0, steering: steer, brake: 1.0 };
           }
-          const throttle = egoSpeed < 1.4 ? 0.34 : 0.06;
-          const brake = egoSpeed > 1.8 ? 0.40 : 0;
+          const throttle = egoSpeed < 1.0 ? 0.30 : 0.05;
+          const brake = egoSpeed > 1.3 ? 0.50 : 0;
           return { throttle, steering: steer, brake };
         }
 
@@ -493,7 +448,7 @@ export class AutoDriveController {
           this._kTurnTimer -= dt;
           if (this._kTurnTimer <= 0) {
             this.status = 'K_TURN_REVERSE_2';
-            this._kTurnTimer = 2.4;
+            this._kTurnTimer = 1.30; // strict reverse cap to stay within rear boundary
           }
           return { throttle: 0, steering: clamp(this._uTurnTurnDirection * 1.0, -1.0, 1.0), brake: 1.0 };
         }
@@ -504,12 +459,17 @@ export class AutoDriveController {
           const revSteer = clamp(-this._uTurnTurnDirection * 1.0, -1.0, 1.0);
           this._steerSmooth = revSteer;
 
-          if (Math.abs(headingErrorToTarget) < 0.70 || rearDist < 2.5 || this._kTurnTimer <= 0) {
+          const alignedWithTarget = Math.abs(headingErrorToTarget) < 0.62;
+          const rearObst = rearDist < 2.4;
+          const rearRoadEdge = cam && (!cam.isOnRoad || cam.isNearRoadEdge);
+          const timeOut = this._kTurnTimer <= 0;
+
+          if (alignedWithTarget || rearObst || rearRoadEdge || timeOut) {
             this.status = 'K_TURN_STOP_2';
-            this._kTurnTimer = 0.35; // pause for gear shift to forward
+            this._kTurnTimer = 0.30; // pause for gear shift to forward
             return { throttle: 0, steering: revSteer, brake: 1.0 };
           }
-          return { throttle: -0.38, steering: revSteer, brake: 0 };
+          return { throttle: -0.28, steering: revSteer, brake: 0 };
         }
 
         // Stop & shift to forward
@@ -521,72 +481,73 @@ export class AutoDriveController {
           return { throttle: 0, steering: 0, brake: 1.0 };
         }
 
-        // Phase 3: Roll forward into target lane
+        // Phase 3: Roll forward into target lane with camera lane following
         if (this.status === 'K_TURN_FORWARD_3') {
-          const steer = clamp(2.2 * headingErrorToTarget, -0.65, 0.65);
+          let steer = clamp(2.4 * headingErrorToTarget, -0.65, 0.65);
+          if (cam && cam.detected && cam.lateralOffsetM != null) {
+            steer += (cam.headingErrorRad || 0) * 0.15 - clamp(cam.lateralOffsetM, -1.5, 1.5) * 0.08;
+          }
           this._steerSmooth = steer;
 
-          if (Math.abs(headingErrorToTarget) < 0.35) {
+          if (Math.abs(headingErrorToTarget) < 0.35 && (cam ? cam.isOnRoad : true)) {
             this.uTurnActive = false;
             this.status = 'CRUISING';
           } else {
-            const throttle = egoSpeed < 1.8 ? 0.35 : 0.12;
-            const brake = egoSpeed > 2.4 ? 0.35 : 0;
+            const throttle = egoSpeed < 1.6 ? 0.32 : 0.10;
+            const brake = egoSpeed > 2.2 ? 0.35 : 0;
             return { throttle, steering: steer, brake };
-          }
-        }
-
-        // ── WIDE ROAD CONTINUOUS U-TURN (Multi-lane roads) ──
-        if (this.status === 'UTURN_TURNING') {
-          if (fwdDist < 2.8 && egoSpeed < 1.8) {
-            this.status = 'K_TURN_REVERSE_2';
-            this._kTurnTimer = 2.0;
-          } else {
-            const turnSteer = clamp(this._uTurnTurnDirection * 1.0, -1.0, 1.0);
-            this._steerSmooth = turnSteer;
-
-            if (Math.abs(headingErrorToTarget) < 0.42) {
-              this.uTurnActive = false;
-              this.status = 'CRUISING';
-            } else {
-              const throttle = egoSpeed < 1.8 ? 0.35 : 0.08;
-              const brake = egoSpeed > 2.5 ? 0.45 : 0;
-              return { throttle, steering: turnSteer, brake };
-            }
           }
         }
       }
 
-      // ── 4. DYNAMIC OBSTACLE EVASION (ROUTE MODE) ─────────────────────
-      const laneW = currentSeg?.laneWidthM ?? 3.5;
-      this.laneWidthM = laneW;
+      // ── 4. SENSOR-BASED OBSTACLE EVASION & PARALLEL LANE OVERTAKING ──
+      const laneW = this.laneWidthM;
+      // Multi-lane parallel road verification:
+      // Parallel lane on the right requires ample lateral clearance and no immediate right curb
+      const rightClear = rightDist > 5.2 && frontRightDist > 9.0 && (cam ? cam.distToRightEdgeM > 2.6 : true);
+      const leftClear = leftDist > 5.2 && frontLeftDist > 9.0;
 
-      const leftClear = leftDist > 7.0 && frontLeftDist > 11.0;
-      const rightClear = rightDist > 7.5 && frontRightDist > 12.0;
+      // When lead obstacle is detected in our lane:
+      if (fwdDist < 18.0 && !this.isEvading && !this.isOvertaking && this._evasionCooldown <= 0) {
+        if (rightClear) {
+          // Multi-lane road: Shift to parallel same-direction lane to the RIGHT (+laneW)
+          // Strictly DO NOT shift left into the oncoming opposite lane (-laneW)!
+          this.isEvading = true;
+          this.isOvertaking = true;
+          this.evasionProgress = 0;
+          this.targetEvasiveShift = laneW; // Shift RIGHT (+3.5m) into parallel lane
+          this._evasionCooldown = 3.0;
+          this._overtakeTimer = 0;
+          this.status = 'CHANGING_LANE';
+        }
+      }
 
-      if (numLanes >= 2) {
-        // Multi-lane road: if obstacle ahead and left is clear, pass in adjacent lane
-        if (fwdDist < 18.0 && !this.isEvading && this._evasionCooldown <= 0 && leftClear) {
-          this.isEvading = true;
+      // Track overtaking progress in the parallel lane
+      if (this.isOvertaking && this.targetEvasiveShift > 0) {
+        this._overtakeTimer += dt;
+        if (this.evasionProgress >= 0.7 && this.status !== 'RETURNING_LANE') {
+          this.status = 'OVERTAKING';
+        }
+
+        // Return to nominal lane after overtaking:
+        // 1. Traveled in parallel lane long enough to pass lead obstacle
+        // 2. Direct parallel lane ahead is clear
+        // 3. Left lane (nominal lane) is clear to merge back
+        const passedObstacle = this._overtakeTimer > 2.0;
+        const parallelAheadClear = fwdDist > 20.0;
+        const returnClear = leftClear && this._evasionCooldown <= 0;
+
+        if (passedObstacle && parallelAheadClear && returnClear) {
+          this.targetEvasiveShift = 0; // Return to nominal lane
           this.evasionProgress = 0;
-          this.targetEvasiveShift = -laneW; // shift left 1 lane
-          this._evasionCooldown = 3.5;
-        } else if (this.isEvading && fwdDist > 24.0 && this._evasionCooldown <= 0 && rightClear) {
-          // Obstacle passed: return to nominal route lane
-          this.isEvading = true;
-          this.evasionProgress = 0;
-          this.targetEvasiveShift = 0; // return to lane center
+          this.status = 'RETURNING_LANE';
           this._evasionCooldown = 3.5;
         }
-      } else {
-        // Single lane road: stay strictly in lane center (0 offset)
-        // If an obstacle or car blocks the road, stop safely at 5.5m buffer
-        this.targetEvasiveShift = 0;
       }
 
       // Smooth S-curve transition for evasive lateral shift
       if (this.evasionProgress < 1.0) {
-        this.evasionProgress = clamp(this.evasionProgress + dt / 2.0, 0, 1.0);
+        this.evasionProgress = clamp(this.evasionProgress + dt / 1.8, 0, 1.0);
         const sCurve = this.evasionProgress * this.evasionProgress * (3 - 2 * this.evasionProgress);
         this._lateralShift = this.evasiveShift + (this.targetEvasiveShift - this.evasiveShift) * sCurve;
         if (this.evasionProgress >= 1.0) {
@@ -594,102 +555,46 @@ export class AutoDriveController {
           this._lateralShift = this.targetEvasiveShift;
           if (this.targetEvasiveShift === 0) {
             this.isEvading = false;
+            this.isOvertaking = false;
+            this.status = 'CRUISING';
           }
         }
       } else {
         this._lateralShift = this.targetEvasiveShift;
       }
 
-      // Pure pursuit target point with evasive shift (0 when cruising normally)
+      // Pure pursuit target point with evasive shift (0 when cruising nominally)
       const perpX = -tangent.z;
       const perpZ = tangent.x;
       targetX = targetPt.x + perpX * this._lateralShift;
       targetZ = targetPt.z + perpZ * this._lateralShift;
     } else {
-      // ── FREE DRIVE / LANE KEEPING MODE (NO CHECKPOINT) ───────────────
-      const nearest = this._findNearestSegment(egoPos);
-      if (!nearest) {
-        return { throttle: 0.15, steering: 0, brake: 0 };
-      }
+      // ── FREE DRIVE / VISION LANE KEEPING MODE (NO CHECKPOINT) ────────
+      // Operates solely using Front Camera visual lane tracking & GPS heading
+      const lookaheadM = clamp(12.0 + egoSpeed * 0.6, 10.0, 22.0);
 
-      const seg = nearest.segment;
-      const bestT = nearest.t;
-      const curve = seg.getCurve();
-      const segLen = seg.lengthM;
-      const laneW = seg.laneWidthM || 3.5;
-      this.laneWidthM = laneW;
-
-      const frame0 = SplineUtils.computeFrame(curve, bestT);
-      const dot = egoFwdX * frame0.tangent.x + egoFwdZ * frame0.tangent.z;
-      const travelDir = dot >= 0 ? 1 : -1;
-
-      const numFwd = seg.lanesForward ?? 1;
-      const numBwd = seg.lanesBackward ?? 1;
-      const sign = travelDir >= 0 ? 1 : -1;
-      const lanesInDir = travelDir >= 0 ? numFwd : numBwd;
-
-      // Curve lookahead evaluation
-      const aheadS1 = Math.min(segLen, bestT * segLen + travelDir * 10.0);
-      const aheadS2 = Math.min(segLen, bestT * segLen + travelDir * 18.0);
-      const f1 = SplineUtils.computeFrame(curve, clamp(aheadS1 / segLen, 0, 1));
-      const f2 = SplineUtils.computeFrame(curve, clamp(aheadS2 / segLen, 0, 1));
-      const h1 = Math.atan2(travelDir * f1.tangent.x, -travelDir * f1.tangent.z);
-      const h2 = Math.atan2(travelDir * f2.tangent.x, -travelDir * f2.tangent.z);
-      this._maxCurveDev = Math.max(Math.abs(wrapPi(h1 - egoHeading)), Math.abs(wrapPi(h2 - egoHeading)));
-
-      // Base driving lane center from road centerline in right-hand traffic
-      const baseMult = lanesInDir >= 2 ? 1.5 : 0.5;
-      const baseLaneOffset = sign * baseMult * laneW;
-
-      // Evasion in free-cruise mode
-      if (lanesInDir >= 2) {
-        const leftClear = leftDist > 7.0 && frontLeftDist > 11.0;
-        const rightClear = rightDist > 8.0 && frontRightDist > 12.0;
-
-        if (fwdDist < 18.0 && !this.isEvading && this._evasionCooldown <= 0 && leftClear) {
-          this.isEvading = true;
-          this.evasionProgress = 0;
-          this.targetEvasiveShift = -sign * laneW;
-          this._evasionCooldown = 3.5;
-        } else if (this.isEvading && fwdDist > 24.0 && this._evasionCooldown <= 0 && rightClear) {
-          this.isEvading = true;
-          this.evasionProgress = 0;
-          this.targetEvasiveShift = 0;
-          this._evasionCooldown = 3.5;
-        }
+      if (cam && cam.detected && cam.lateralOffsetM != null) {
+        const camOffset = clamp(cam.lateralOffsetM, -2.5, 2.5);
+        const camHeadErr = clamp(cam.headingErrorRad || 0, -0.6, 0.6);
+        const targetH = egoHeading + camHeadErr - camOffset * 0.28;
+        targetX = bumperX + Math.sin(targetH) * lookaheadM;
+        targetZ = bumperZ - Math.cos(targetH) * lookaheadM;
       } else {
-        this.targetEvasiveShift = 0;
+        // Maintain forward GPS heading, nudged by side clearance sensors
+        let steerBias = 0;
+        if (leftDist < 2.5) steerBias += (2.5 - leftDist) * 0.25;
+        if (rightDist < 2.5) steerBias -= (2.5 - rightDist) * 0.25;
+        const targetH = egoHeading + steerBias;
+        targetX = bumperX + Math.sin(targetH) * lookaheadM;
+        targetZ = bumperZ - Math.cos(targetH) * lookaheadM;
       }
-
-      if (this.evasionProgress < 1.0) {
-        this.evasionProgress = clamp(this.evasionProgress + dt / 2.0, 0, 1.0);
-        const sCurve = this.evasionProgress * this.evasionProgress * (3 - 2 * this.evasionProgress);
-        this._lateralShift = this.evasiveShift + (this.targetEvasiveShift - this.evasiveShift) * sCurve;
-        if (this.evasionProgress >= 1.0) {
-          this.evasiveShift = this.targetEvasiveShift;
-          this._lateralShift = this.targetEvasiveShift;
-          if (this.targetEvasiveShift === 0) this.isEvading = false;
-        }
-      } else {
-        this._lateralShift = this.targetEvasiveShift;
-      }
-
-      const totalOffset = baseLaneOffset + this._lateralShift;
-
-      const lookaheadM = clamp(14.0 + egoSpeed * 0.8, 12.0, 28.0);
-      const targetS = bestT * segLen + travelDir * lookaheadM;
-      const u = clamp(targetS / segLen, 0, 1);
-      const frame = SplineUtils.computeFrame(curve, u);
-
-      targetX = frame.position.x + frame.right.x * totalOffset;
-      targetZ = frame.position.z + frame.right.z * totalOffset;
     }
 
     // ── 5. PURE PURSUIT STEERING + SENSOR CENTERING FUSION ─────────────
     const adjustedHeading = Math.atan2(targetX - bumperX, -(targetZ - bumperZ));
     let finalHeadingError = wrapPi(adjustedHeading - egoHeading);
 
-    // Cross-track error correction (lateral offset from lane polyline at front bumper)
+    // Cross-track error correction (lateral offset from route polyline at front bumper)
     if (hasRoute && closestPt && !this.uTurnActive) {
       const toBumperX = bumperX - closestPt.x;
       const toBumperZ = bumperZ - closestPt.z;
@@ -699,9 +604,18 @@ export class AutoDriveController {
 
     // Front camera lane centering micro-adjustment when cruising in-lane
     if (!this.isEvading && !this.uTurnActive) {
-      const cam = sensorData.cameraReadings;
       if (cam && cam.detected && cam.lateralOffsetM != null) {
-        finalHeadingError += cam.headingErrorRad * 0.15 - clamp(cam.lateralOffsetM, -1.5, 1.5) * 0.08;
+        finalHeadingError += (cam.headingErrorRad || 0) * 0.15 - clamp(cam.lateralOffsetM, -1.5, 1.5) * 0.08;
+      }
+    }
+
+    // Camera road boundary protection: prevent vehicle from brushing curb or leaving asphalt
+    if (!this.uTurnActive && cam) {
+      if (cam.distToLeftEdgeM < 1.2) {
+        finalHeadingError += (1.2 - cam.distToLeftEdgeM) * 0.25;
+      }
+      if (cam.distToRightEdgeM < 1.2) {
+        finalHeadingError -= (1.2 - cam.distToRightEdgeM) * 0.25;
       }
     }
 
@@ -719,10 +633,12 @@ export class AutoDriveController {
 
     // ── 6. SPEED REGULATION, PROACTIVE CORNER BRAKING & OBSTACLE STOPPING ──
     let targetSpeed = this.cruiseSpeedMps;
-    this.status = 'CRUISING';
+    if (!this.uTurnActive && !this.isEvading && !this.isOvertaking && !this._isBlocked) {
+      this.status = 'CRUISING';
+    }
 
     // 1. Proactive Lookahead Cornering Deceleration:
-    // If a turn / intersection is ahead, brake down to safe turning speed BEFORE entering!
+    // Decelerate proactively before 90° intersection turns and tight curves
     if (this._distToTurn != null && this._distToTurn < 35.0) {
       const safeTurnSpeed = clamp(2.8 + (1.0 - Math.min(1.57, this._maxCurveDev) / 1.57) * 1.4, 2.7, 3.8);
       const turnDistRatio = clamp(this._distToTurn / 30.0, 0.0, 1.0);
@@ -743,23 +659,39 @@ export class AutoDriveController {
     // Arrival deceleration ramp towards destination checkpoint
     if (distToDestination < 35.0) {
       const arrivalRatio = clamp((distToDestination - 7.0) / 28.0, 0.0, 1.0);
-      const targetArrivalSpeed = 1.6 + arrivalRatio * (this.cruiseSpeedMps - 1.6);
+      const targetArrivalSpeed = 1.4 + arrivalRatio * (this.cruiseSpeedMps - 1.4);
       targetSpeed = Math.min(targetSpeed, targetArrivalSpeed);
     }
 
-    // Proportional obstacle / lead vehicle braking
+    // Continuous analog proximity headway braking
     let obstacleBrake = 0;
-    if (fwdDist < 5.5) {
-      // Stopped safely behind lead car or obstacle
+    const isPassingInParallelLane = (this.status === 'OVERTAKING' || this.status === 'CHANGING_LANE') && this.targetEvasiveShift > 0;
+
+    if (fwdDist < 5.0 && !isPassingInParallelLane) {
+      // Stopped safely behind obstacle with 5.0m buffer
       this._isBlocked = true;
       this.status = 'BLOCKED';
       targetSpeed = 0;
       obstacleBrake = 1.0;
-    } else if (fwdDist < 16.0) {
+    } else if (fwdDist < 16.0 && !isPassingInParallelLane) {
       this._isBlocked = true;
-      const ratio = clamp((fwdDist - 5.5) / 10.5, 0, 1.0);
+      const ratio = clamp((fwdDist - 5.0) / 11.0, 0, 1.0);
       targetSpeed = Math.min(targetSpeed, 1.2 + ratio * 6.0);
       obstacleBrake = (1.0 - ratio) * 0.85;
+    } else if (isPassingInParallelLane) {
+      this._isBlocked = false;
+      // In parallel lane: maintain cruise speed for swift overtake
+      targetSpeed = this.cruiseSpeedMps;
+      obstacleBrake = 0;
+      // If there is an obstacle directly ahead in the parallel lane:
+      if (fwdDist < 5.0) {
+        targetSpeed = 0;
+        obstacleBrake = 1.0;
+      } else if (fwdDist < 12.0) {
+        const ratio = clamp((fwdDist - 5.0) / 7.0, 0, 1.0);
+        targetSpeed = Math.min(targetSpeed, 1.4 + ratio * 5.0);
+        obstacleBrake = (1.0 - ratio) * 0.8;
+      }
     } else {
       this._isBlocked = false;
     }
@@ -773,7 +705,7 @@ export class AutoDriveController {
       throttle = 0;
       brake = Math.max(brake, 1.0);
     } else if (egoSpeed < 0.8 && targetSpeed > 1.5) {
-      // Start rolling from a stop decisively with zero brake
+      // Start rolling decisively from a dead stop
       throttle = clamp(0.38 + speedError * 0.04, 0.35, 0.65);
       brake = 0;
     } else if (speedError > 0.3) {
@@ -797,6 +729,6 @@ export class AutoDriveController {
   dispose() {
     this.enabled = false;
     this.navigationSystem = null;
-    this.roadNetwork = null;
+    this.ego = null;
   }
 }

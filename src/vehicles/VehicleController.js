@@ -213,39 +213,54 @@ export class VehicleController {
       if (Math.abs(gpInput.steer) > 0.05) targetSteering = gpInput.steer;
     }
 
-    const hasManualInput = Math.abs(throttle) > 0.05 || brake > 0.05 || Math.abs(targetSteering) > 0.05;
+    const hasManualInput = Math.abs(throttle) > 0.08 || brake > 0.08 || Math.abs(targetSteering) > 0.12;
+    const hasDeliberateTakeover = Math.abs(throttle) > 0.25 || brake > 0.25 || Math.abs(targetSteering) > 0.35;
 
     // ── DESTINATION ARRIVAL BRAKE HOLD ───────────────────────────────
-    // If vehicle arrived at destination, lock holding brake firmly until driver provides input
+    // If vehicle arrived at destination, lock holding brake firmly until deliberate driver takeover
     if (this._holdingBrake) {
-      if (hasManualInput) {
-        this._holdingBrake = false; // Release hold on manual takeover
+      if (hasDeliberateTakeover) {
+        this._holdingBrake = false; // Release hold on deliberate driver throttle/brake
       } else {
         return { throttle: 0, steering: 0, brake: 1.0 };
       }
     }
 
     // ── AUTO-DRIVE MODE (with Seamless Driver Takeover) ──────────────
-    if (this.autoDriveEnabled && this.autoDriveController && this.autoDriveController.enabled) {
-      if (hasManualInput) {
-        // Driver takes over control! Disengage Auto Drive smoothly
-        this.toggleAutoDrive(false, ego);
-        this.onDriverTakeover?.();
-        this.playHaptic(0.4, 120);
-      } else {
-        const egoState = ego?.motionModel?.getState?.() ?? null;
-        const autoInput = this.autoDriveController.update(dt, sensorData, egoState);
-
-        // If auto-drive disengaged itself (arrived at destination), lock holding brake!
-        if (!this.autoDriveController.enabled) {
-          this.autoDriveEnabled = false;
-          if (this.autoDriveController.status === 'ARRIVED') {
-            this._holdingBrake = true;
-          }
-          this.onAutoDriveDisengaged?.(this.autoDriveController.status);
+    if (this.autoDriveEnabled && this.autoDriveController) {
+      if (this.autoDriveController.status === 'ARRIVED') {
+        this._holdingBrake = true;
+        if (hasDeliberateTakeover) {
+          this.toggleAutoDrive(false, ego);
+          this._holdingBrake = false;
+          this.onDriverTakeover?.();
+          this.playHaptic(0.4, 120);
+        } else {
+          return { throttle: 0, steering: 0, brake: 1.0 };
         }
+      } else if (this.autoDriveController.enabled) {
+        if (hasManualInput) {
+          // Driver takes over control! Disengage Auto Drive smoothly
+          this.toggleAutoDrive(false, ego);
+          this.onDriverTakeover?.();
+          this.playHaptic(0.4, 120);
+        } else {
+          const egoState = ego?.motionModel?.getState?.() ?? null;
+          const autoInput = this.autoDriveController.update(dt, sensorData, egoState);
 
-        return autoInput;
+          // If auto-drive arrived at destination, lock holding brake firmly!
+          if (this.autoDriveController.status === 'ARRIVED') {
+            this.autoDriveEnabled = false;
+            this._holdingBrake = true;
+            this.onAutoDriveDisengaged?.('ARRIVED');
+            return { throttle: 0, steering: 0, brake: 1.0 };
+          } else if (!this.autoDriveController.enabled) {
+            this.autoDriveEnabled = false;
+            this.onAutoDriveDisengaged?.(this.autoDriveController.status);
+          }
+
+          return autoInput;
+        }
       }
     }
 
