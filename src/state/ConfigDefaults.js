@@ -99,24 +99,25 @@ export const ConfigDefaults = deepFreeze({
         kinematicRideHeightM: 0.72, // chassis-center height; tires on the asphalt
         physicsSpawnHeightM: 1.0, // small drop onto the suspension
         vehicleProxyHalf: { width: 0.85, height: 0.75, length: 2.0 }, // analytic OBB proxy (Raycast/Neighbor/GPU)
+        chassis: { widthM: 1.7, heightM: 0.6, lengthM: 4.0 },
         body: { widthM: 1.7, heightM: 0.6, lengthM: 4.0, offsetY: -0.05, roughness: 0.5, metalness: 0.25 },
         cabin: { widthM: 1.5, heightM: 0.5, lengthM: 1.9, offsetY: 0.32, offsetZ: 0.45, roughness: 0.25, metalness: 0.4, colorHex: 0x1d2126 },
-        wheel: { radiusM: 0.36, widthM: 0.28, trackM: 0.82, offsetZM: 1.35, offsetY: -0.31, colorHex: 0x18191c },
+        wheel: { radiusM: 0.36, widthM: 0.28, trackM: 0.82, offsetZM: 1.35, frontAxleZ: 1.35, rearAxleZ: 1.35, offsetY: -0.31, colorHex: 0x18191c },
         bicycle: {
-            wheelbaseM: 2.7,
-            maxSteerRad: 0.55,
+            wheelbaseM: 2.75,
+            maxSteerRad: 0.61,
             maxSpeedMps: 25,
             maxReverseSpeedMps: 6,
-            engineAccelMps2: 4.5,
-            brakeDecelMps2: 9,
-            coastDecelMps2: 0.9,
+            engineAccelMps2: 5.2,
+            brakeDecelMps2: 12,
+            coastDecelMps2: 2.5,
         },
         physics: {
             massKg: 380,
             maxEngineForceN: 1600,
             brakeForcePerWheelN: 45,
-            maxSteerRad: 0.5,
-            steerSpeedFactor: 0.05, // steering authority fades as 1/(1 + v·f)
+            maxSteerRad: 0.61,
+            steerSpeedFactor: 0.04, // steering authority fades as 1/(1 + v·f)
             angularDamping: 0.35,
             linearDamping: 0.01,
             chassisHalf: { x: 0.85, y: 0.35, z: 2.05 },
@@ -154,7 +155,7 @@ export const ConfigDefaults = deepFreeze({
             idmMinGapM: 2.5,
         },
         controls: {
-            steerSlewRate: 6, // ≈ full lock in 1/6 s
+            steerSlewRate: 3.2, // smooth and responsive steering
             keyMap: {
                 forward: ['KeyW', 'ArrowUp'],
                 backward: ['KeyS', 'ArrowDown'],
@@ -253,11 +254,11 @@ export const ConfigDefaults = deepFreeze({
         firstPersonUpM: 0.45,
         firstPersonLookDistanceM: 40,
         firstPersonLookDropM: 1.6,
-        thirdPersonDistanceM: 9,
-        thirdPersonHeightM: 4.2,
-        thirdPersonLookAheadM: 6,
-        thirdPersonLookHeightM: 1.2,
-        positionDampLambda: 4.5,
+        thirdPersonDistanceM: 6.2,
+        thirdPersonHeightM: 2.3,
+        thirdPersonLookAheadM: 10,
+        thirdPersonLookHeightM: 1.1,
+        positionDampLambda: 5.5,
         targetDampLambda: 10,
         minY: 0.6,
     },

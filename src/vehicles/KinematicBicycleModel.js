@@ -56,21 +56,47 @@ export class KinematicBicycleModel {
 
     // Longitudinal dynamics (accelerate → brake → coast, in priority order).
     let speed = this._state.speedMps;
-    if (throttle !== 0) {
-      speed += throttle * this.engineAccelMps2 * dt;
+
+    // S / Down key acts as brake while moving forward (> 0.4 m/s); once stopped it reverses
+    let effThrottle = throttle;
+    let effBrake = brake;
+    if (speed > 0.4 && throttle < 0) {
+      effBrake = Math.max(effBrake, Math.abs(throttle));
+      effThrottle = 0;
     }
-    if (brake > 0) {
-      const decel = brake * this.brakeDecelMps2 * dt;
+
+    if (effBrake > 0) {
+      const decel = effBrake * Math.max(this.brakeDecelMps2, 14) * dt;
       speed = Math.abs(speed) <= decel ? 0 : speed - Math.sign(speed) * decel;
-    } else if (throttle === 0) {
-      const decel = this.coastDecelMps2 * dt;
+    } else if (effThrottle !== 0) {
+      speed += effThrottle * this.engineAccelMps2 * dt;
+    } else {
+      // Realistic rolling resistance + aero drag so the car does not glide on ice
+      const aeroDrag = 0.0035 * speed * speed;
+      const rollingResistance = 3.2;
+      const decel = (rollingResistance + aeroDrag) * dt;
       speed = Math.abs(speed) <= decel ? 0 : speed - Math.sign(speed) * decel;
     }
     speed = clamp(speed, -this.maxReverseSpeedMps, this.maxSpeedMps);
     this._state.speedMps = speed;
 
-    // Yaw + position integration (compass convention: +steer = +heading).
-    this._state.headingRad += (speed / this.wheelbaseM) * Math.tan(steerAngle) * dt;
+    // Realistic speed-dependent steering and lateral tire grip
+    const absSpeed = Math.abs(speed);
+    // Exponential steering curve gives fine precision on straight roads while allowing full lock
+    const steerRatio = Math.abs(this.maxSteerRad) > 1e-4 ? steerAngle / this.maxSteerRad : 0;
+    const steerInput = Math.sign(steerAngle) * Math.pow(Math.abs(steerRatio), 1.15) * this.maxSteerRad;
+
+    // At low speeds (< 5 m/s) allow full steering angle for tight intersection turns (~4-5m radius)
+    // Speed factor gently fades steering authority as speed rises
+    const speedFactor = 1 / (1 + Math.max(0, absSpeed - 4.5) * 0.045);
+    const effSteerAngle = steerInput * speedFactor;
+
+    // Lateral grip limit (prevents unrealistic spinning out at speed)
+    const rawYawRate = (speed / this.wheelbaseM) * Math.tan(effSteerAngle);
+    const maxYawRate = 9.5 / Math.max(1.0, absSpeed);
+    const yawRate = clamp(rawYawRate, -maxYawRate, maxYawRate);
+
+    this._state.headingRad += yawRate * dt;
     const h = this._state.headingRad;
     this._state.position.x += Math.sin(h) * speed * dt;
     this._state.position.z += -Math.cos(h) * speed * dt;

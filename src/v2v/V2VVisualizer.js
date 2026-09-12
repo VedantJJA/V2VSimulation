@@ -52,6 +52,7 @@ export class V2VVisualizer {
             })
         );
         this._lineSegments.name = 'v2v:links';
+        this._lineSegments.userData.isExternalOverlay = true;
         this._lineSegments.frustumCulled = false;
         this._lineSegments.visible = false;
         engine.sceneManager.add(this._lineSegments);
@@ -62,6 +63,7 @@ export class V2VVisualizer {
             maxLinks * 4
         );
         this._hitMarkers.name = 'v2v:wall-hits';
+        this._hitMarkers.userData.isExternalOverlay = true;
         this._hitMarkers.frustumCulled = false;
         this._hitMarkers.visible = false;
         this._hitMarkers.count = 0;

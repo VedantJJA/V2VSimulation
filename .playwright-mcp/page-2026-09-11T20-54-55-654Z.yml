@@ -1,0 +1,31 @@
+- generic [ref=f3e3]:
+  - button "▾ Controls" [expanded] [ref=f3e4] [cursor=pointer]
+  - generic [ref=f3e5]:
+    - generic [ref=f3e6]:
+      - button "▾ Environment" [expanded] [ref=f3e7] [cursor=pointer]
+      - generic [ref=f3e8]:
+        - generic [ref=f3e9]:
+          - generic [ref=f3e10]: Time of day
+          - generic [ref=f3e11] [cursor=pointer]:
+            - combobox "Time of day" [ref=f3e12]:
+              - option "dawn"
+              - option "day" [selected]
+              - option "night"
+            - generic: day ↕
+        - generic [ref=f3e13]:
+          - generic [ref=f3e14]: Fog density
+          - textbox "Fog density" [ref=f3e18]: "0.0025"
+    - generic [ref=f3e55]:
+      - button "▸ Roads (debug)" [ref=f3e56] [cursor=pointer]
+      - text: Empty
+    - button "▸ Map" [ref=f3e58] [cursor=pointer]
+    - button "▸ Traffic / V2V" [ref=f3e60] [cursor=pointer]
+    - generic [ref=f3e61]:
+      - button "▾ Camera View" [expanded] [ref=f3e62] [cursor=pointer]
+      - generic [ref=f3e64]:
+        - generic [ref=f3e65]: View Mode
+        - generic [ref=f3e66] [cursor=pointer]:
+          - combobox "View Mode" [ref=f3e67]:
+            - option "3rd Person" [selected]
+            - option "Cockpit"
+          - generic: 3rd Person ↕

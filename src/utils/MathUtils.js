@@ -35,10 +35,13 @@ export function wrapPi(angle) {
 export function isTypingTarget(event) {
     const target = event.target;
     if (!target) return false;
-    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-        return true;
+    if (target.tagName === 'TEXTAREA' || target.isContentEditable) return true;
+    if (target.tagName === 'INPUT') {
+        const type = (target.type || '').toLowerCase();
+        if (type === 'text' || type === 'search' || type === 'password' || type === 'email') {
+            return true;
+        }
     }
-    if (typeof target.closest === 'function' && target.closest('.lil-gui')) return true;
     return false;
 }
 

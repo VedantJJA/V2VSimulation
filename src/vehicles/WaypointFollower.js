@@ -46,7 +46,17 @@ export class WaypointFollower {
     this._progressM = distanceAlongM;
     /** @type {Array<{ x: number, z: number, d: number }> | null} */
     this._centerline = null;
+    /** @type {Array<{ x: number, z: number }> | null} */
+    this._roundaboutArc = null;
+    this._roundaboutNext = null;
+    this._roundaboutIndex = 0;
+    /** @type {Array<import('./Vehicle.js').Vehicle> | null} */
+    this._vehicles = null;
     this._rebuildPath();
+  }
+
+  setVehicles(vehicles) {
+    this._vehicles = vehicles;
   }
 
   get segmentId() {
@@ -71,23 +81,70 @@ export class WaypointFollower {
     let segment = this._network.getSegment(this._segmentId);
     if (!segment || !this._centerline) return { throttle: 0, steering: 0, brake: 1 };
 
-    // 1. Progress by projecting the live position onto the centerline.
-    this._progressM = this._projectProgress(vehicleState.position);
+    let target;
+    let desiredSpeedMultiplier = 1.0;
 
-    // 2. Segment end → advance (intersection routing or dead-end U-turn).
-    if (this._atNode(segment)) {
-      this._advanceSegment(vehicleState.headingRad);
-      segment = this._network.getSegment(this._segmentId);
-      if (!segment || !this._centerline) return { throttle: 0, steering: 0, brake: 1 };
+    // ---- Case A: Active Roundabout Circulating Maneuver ------------------
+    if (this._roundaboutArc && this._roundaboutArc.length > 0) {
+      const vPos = vehicleState.position;
+      const arc = this._roundaboutArc;
+
+      // Find closest waypoint on the roundabout arc
+      let bestIdx = this._roundaboutIndex;
+      let bestDistSq = Infinity;
+      const searchEnd = Math.min(arc.length, this._roundaboutIndex + 4);
+      for (let i = this._roundaboutIndex; i < searchEnd; i++) {
+        const dSq = (vPos.x - arc[i].x) ** 2 + (vPos.z - arc[i].z) ** 2;
+        if (dSq < bestDistSq) {
+          bestDistSq = dSq;
+          bestIdx = i;
+        }
+      }
+      this._roundaboutIndex = bestIdx;
+
+      // Lookahead along the circulating arc
+      const lookaheadIndex = Math.min(arc.length - 1, this._roundaboutIndex + 3);
+      target = {
+        x: arc[lookaheadIndex].x,
+        z: arc[lookaheadIndex].z,
+      };
+      desiredSpeedMultiplier = 0.65; // slow down to comfortably navigate roundabout curve
+
+      // Check if vehicle has reached the exit point of the roundabout
+      const exitPoint = arc[arc.length - 1];
+      const distToExit = Math.hypot(vPos.x - exitPoint.x, vPos.z - exitPoint.z);
+      if (this._roundaboutIndex >= arc.length - 2 || distToExit < 3.5) {
+        // Transition onto the destination segment
+        if (this._roundaboutNext) {
+          this._segmentId = this._roundaboutNext.segmentId;
+          this._lane = this._roundaboutNext.lane;
+          this._progressM = this._roundaboutNext.progressM;
+        }
+        this._roundaboutArc = null;
+        this._roundaboutNext = null;
+        this._roundaboutIndex = 0;
+        this._rebuildPath();
+      }
+    } else {
+      // ---- Case B: Normal Lane Segment Following -------------------------
+      // 1. Progress by projecting the live position onto the centerline.
+      this._progressM = this._projectProgress(vehicleState.position);
+
+      // 2. Segment end → advance (intersection routing or dead-end U-turn).
+      if (this._atNode(segment)) {
+        this._advanceSegment(vehicleState.headingRad);
+        segment = this._network.getSegment(this._segmentId);
+        if (!segment || !this._centerline) return { throttle: 0, steering: 0, brake: 1 };
+      }
+
+      const lengthM = segment.lengthM;
+      const travel = this._lane >= 0 ? 1 : -1;
+      const progress = clamp(this._progressM, 0, lengthM);
+      const targetDistance = clamp(progress + travel * this._lookaheadM, 0, lengthM);
+      const u = lengthM > 0 ? targetDistance / lengthM : 0;
+      const laneOffset = SplineUtils.laneOffsetM(this._lane, segment.laneWidthM);
+      target = SplineUtils.lateralAt(segment.getCurve(), u, laneOffset);
     }
-
-    const lengthM = segment.lengthM;
-    const travel = this._lane >= 0 ? 1 : -1;
-    const progress = clamp(this._progressM, 0, lengthM);
-    const targetDistance = clamp(progress + travel * this._lookaheadM, 0, lengthM);
-    const u = lengthM > 0 ? targetDistance / lengthM : 0;
-    const laneOffset = SplineUtils.laneOffsetM(this._lane, segment.laneWidthM);
-    const target = SplineUtils.lateralAt(segment.getCurve(), u, laneOffset);
 
     // Pure pursuit: steer proportionally to the heading error toward target.
     const dx = target.x - vehicleState.position.x;
@@ -97,13 +154,62 @@ export class WaypointFollower {
 
     // Speed: ease off with steering urgency; creep through U-turns.
     const urgency = Math.min(1, Math.abs(headingError) / 0.7);
-    let desiredSpeed = this._targetSpeedMps * (1 - this._cornerSlowFactor * urgency);
+    let desiredSpeed = this._targetSpeedMps * (1 - this._cornerSlowFactor * urgency) * desiredSpeedMultiplier;
     if (Math.abs(headingError) > 1.6) desiredSpeed = Math.min(desiredSpeed, this._uTurnSpeedMps);
     desiredSpeed = Math.max(0, desiredSpeed);
 
-    // ---- V2V safety reactions (Phase 10) ---------------------------------
     let forcedBrake = 0;
     let throttleLocked = false;
+
+    // ---- Autonomous Forward Collision Avoidance (vehicles don't collide) ---
+    if (this._vehicles) {
+      const myPos = vehicleState.position;
+      const fwdX = Math.sin(vehicleState.headingRad);
+      const fwdZ = -Math.cos(vehicleState.headingRad);
+      const rightX = Math.cos(vehicleState.headingRad);
+      const rightZ = Math.sin(vehicleState.headingRad);
+
+      let closestLeadDist = Infinity;
+      let leadSpeed = 0;
+
+      for (const other of this._vehicles) {
+        if (!other || !other.motionModel) continue;
+        const otherState = other.motionModel.getState();
+        if (otherState === vehicleState) continue; // skip self
+
+        const ox = otherState.position.x - myPos.x;
+        const oz = otherState.position.z - myPos.z;
+        const longDist = ox * fwdX + oz * fwdZ;
+        const latDist = Math.abs(ox * rightX + oz * rightZ);
+
+        // Check if other vehicle is in front of us in our travel corridor
+        if (longDist > 0.5 && longDist < 25.0 && latDist < 2.2) {
+          if (longDist < closestLeadDist) {
+            closestLeadDist = longDist;
+            leadSpeed = Math.max(0, otherState.speedMps ?? 0);
+          }
+        }
+      }
+
+      if (closestLeadDist < 25.0) {
+        if (closestLeadDist < 7.0) {
+          // Safe buffer stop behind the lead vehicle (safe buffer: 7m)
+          desiredSpeed = 0;
+          forcedBrake = Math.max(forcedBrake, 1.0);
+          throttleLocked = true;
+        } else {
+          // Smoothly adapt speed to maintain ~8m following headway
+          const headway = closestLeadDist - 7.0;
+          const targetFollowSpeed = Math.min(this._targetSpeedMps, headway * 0.75 + leadSpeed * 0.5);
+          desiredSpeed = Math.min(desiredSpeed, targetFollowSpeed);
+          if (headway < 4.0 && vehicleState.speedMps > leadSpeed) {
+            forcedBrake = Math.max(forcedBrake, 0.6);
+          }
+        }
+      }
+    }
+
+    // ---- V2V safety reactions (Phase 10) ---------------------------------
     for (const alert of v2vAlerts) {
       if (alert.type === 'icw' && alert.severity === 'critical') {
         desiredSpeed = Math.min(desiredSpeed, this._targetSpeedMps * 0.2);
@@ -181,25 +287,58 @@ export class WaypointFollower {
     }
 
     if (best) {
-      this._segmentId = best.segment.id;
       const laneRank = this._lane >= 0 ? this._lane : -this._lane - 1;
-      if (best.forward) {
-        const lanes = Math.max(1, best.segment.lanesForward);
-        this._lane = Math.min(laneRank, lanes - 1);
-        this._progressM = 0;
+      const targetLane = best.forward
+        ? Math.min(laneRank, Math.max(1, best.segment.lanesForward) - 1)
+        : -1 - Math.min(laneRank, Math.max(1, best.segment.lanesBackward) - 1);
+      const targetProgress = best.forward ? 0 : best.segment.lengthM;
+
+      if (node.intersectionType === 'roundabout') {
+        // Calculate circulating counter-clockwise arc around central island
+        const incomingOffset = SplineUtils.laneOffsetM(this._lane, segment.laneWidthM);
+        const uIn = arrivingForward ? 1.0 : 0.0;
+        const pIn = SplineUtils.lateralAt(segment.getCurve(), uIn, incomingOffset);
+
+        const outgoingOffset = SplineUtils.laneOffsetM(targetLane, best.segment.laneWidthM);
+        const uOut = best.forward ? 0.0 : 1.0;
+        const pOut = SplineUtils.lateralAt(best.segment.getCurve(), uOut, outgoingOffset);
+
+        const thetaIn = Math.atan2(pIn.z - node.position.z, pIn.x - node.position.x);
+        const thetaOut = Math.atan2(pOut.z - node.position.z, pOut.x - node.position.x);
+        let dTheta = thetaOut - thetaIn;
+        while (dTheta >= 0) dTheta -= Math.PI * 2;
+        if (Math.abs(dTheta) < 0.25) dTheta -= Math.PI * 2; // full loop if same exit
+
+        const R = 10.5; // circulating lane center radius
+        const arcSteps = Math.max(6, Math.ceil(Math.abs(dTheta) * 5));
+        const arc = [];
+        for (let k = 0; k <= arcSteps; k++) {
+          const frac = k / arcSteps;
+          const th = thetaIn + dTheta * frac;
+          const wx = node.position.x + Math.cos(th) * R;
+          const wz = node.position.z + Math.sin(th) * R;
+          arc.push({ x: wx, z: wz });
+        }
+
+        this._roundaboutArc = arc;
+        this._roundaboutNext = {
+          segmentId: best.segment.id,
+          lane: targetLane,
+          progressM: targetProgress,
+        };
+        this._roundaboutIndex = 0;
       } else {
-        const lanes = Math.max(1, best.segment.lanesBackward);
-        this._lane = -1 - Math.min(laneRank, lanes - 1);
-        this._progressM = best.segment.lengthM;
+        this._segmentId = best.segment.id;
+        this._lane = targetLane;
+        this._progressM = targetProgress;
+        this._rebuildPath();
       }
     } else {
       // Dead end: U-turn onto the mirrored opposing lane of this segment.
       this._lane = -(this._lane + 1);
       this._progressM = this._lane >= 0 ? 0 : segment.lengthM;
+      this._rebuildPath();
     }
-
-    console.debug(`[WaypointFollower] route: segment ${this._segmentId}, lane ${this._lane}`);
-    this._rebuildPath();
   }
 
   /** Arc-length progress of `position` along the cached centerline samples. */

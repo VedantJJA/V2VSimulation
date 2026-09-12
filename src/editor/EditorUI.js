@@ -24,6 +24,7 @@ const STYLES = `
   .editor-panel select, .editor-panel input[type='number'] { width: 100%; box-sizing: border-box;
     padding: 4px 6px; font: inherit; font-size: 12px; color: #dfe4ea; background: #10141a;
     border: 1px solid #2b313a; border-radius: 4px; }
+  .editor-panel input[type='range'] { width: 100%; margin: 6px 0; accent-color: #4a90c9; cursor: pointer; }
   .editor-row { display: flex; gap: 8px; }
   .editor-row > label { flex: 1; }
   .editor-row > div { flex: 1; }
@@ -135,6 +136,9 @@ export class EditorUI {
 
     bar.append(el('div', 'sep'));
 
+    const undoButton = el('button', 'editor-btn', '↺ Undo');
+    undoButton.title = 'Undo last change (Ctrl+Z)';
+    undoButton.addEventListener('click', () => this.editor.undo());
     const saveButton = el('button', 'editor-btn', 'Save');
     saveButton.addEventListener('click', () => this._save());
     const loadButton = el('button', 'editor-btn', 'Load');
@@ -142,7 +146,7 @@ export class EditorUI {
     const runButton = el('button', 'editor-btn run', 'Run Simulation ▸');
     runButton.addEventListener('click', () => this.editor.runSimulation());
 
-    bar.append(saveButton, loadButton, runButton);
+    bar.append(undoButton, saveButton, loadButton, runButton);
     return bar;
   }
 
@@ -152,35 +156,94 @@ export class EditorUI {
     // ---- Road ---------------------------------------------------------------
     this._roadSection = el('div');
     this._roadSection.append(el('h3', null, 'Road'));
-    this._roadSection.append(el('label', null, 'Segment'));
+
+    // Road Drawing Mode (Bézier vs Straight)
+    this._roadSection.append(el('label', null, 'Draw Mode'));
+    const modeRow = el('div', 'editor-row');
+    this._bezierModeBtn = el('button', 'editor-btn active', 'Bézier Curve');
+    this._bezierModeBtn.style.flex = '1';
+    this._straightModeBtn = el('button', 'editor-btn', 'Straight');
+    this._straightModeBtn.style.flex = '1';
+
+    this._bezierModeBtn.addEventListener('click', () => {
+      this.editor.tools.road.setMode('bezier');
+      this._bezierModeBtn.classList.add('active');
+      this._straightModeBtn.classList.remove('active');
+    });
+    this._straightModeBtn.addEventListener('click', () => {
+      this.editor.tools.road.setMode('straight');
+      this._straightModeBtn.classList.add('active');
+      this._bezierModeBtn.classList.remove('active');
+    });
+    modeRow.append(this._bezierModeBtn, this._straightModeBtn);
+    this._roadSection.appendChild(modeRow);
+
+    this._roadSection.append(el('label', null, 'Selected Segment'));
     this._segmentSelect = el('select');
     this._segmentSelect.addEventListener('change', () => this.editor.selectSegment(this._segmentSelect.value));
     this._roadSection.appendChild(this._segmentSelect);
 
-    const row = el('div', 'editor-row');
-    const fwdCell = el('div');
-    fwdCell.append(el('label', null, 'lanes → (fwd)'));
-    this._lanesForwardInput = el('input');
-    this._lanesForwardInput.type = 'number';
-    this._lanesForwardInput.min = '0';
-    this._lanesForwardInput.max = '8';
-    this._lanesForwardInput.step = '1';
-    this._lanesForwardInput.addEventListener('change', () => this._applyLanes());
-    fwdCell.appendChild(this._lanesForwardInput);
+    // Balanced Lanes Slider (1 to 4 lanes per side)
+    const lanesLabel = el('label', null, 'Lanes (per direction)');
+    this._lanesValueText = el('span', null, ' (1 lane each side)');
+    this._lanesValueText.style.color = '#8b96a5';
+    lanesLabel.appendChild(this._lanesValueText);
+    this._roadSection.appendChild(lanesLabel);
 
-    const bwdCell = el('div');
-    bwdCell.append(el('label', null, 'lanes ← (bwd)'));
-    this._lanesBackwardInput = el('input');
-    this._lanesBackwardInput.type = 'number';
-    this._lanesBackwardInput.min = '0';
-    this._lanesBackwardInput.max = '8';
-    this._lanesBackwardInput.step = '1';
-    this._lanesBackwardInput.addEventListener('change', () => this._applyLanes());
-    bwdCell.appendChild(this._lanesBackwardInput);
+    this._lanesSlider = el('input');
+    this._lanesSlider.type = 'range';
+    this._lanesSlider.min = '1';
+    this._lanesSlider.max = '4';
+    this._lanesSlider.step = '1';
+    this._lanesSlider.value = '1';
+    this._lanesSlider.addEventListener('input', () => this._applyBalancedLanes());
+    this._roadSection.appendChild(this._lanesSlider);
 
-    row.append(fwdCell, bwdCell);
-    this._roadSection.append(row, el('p', 'editor-hint',
-      'Esc / right-click ends a chain. Click near an existing node to connect — shared nodes become intersections.'));
+    // Guard Rails Dropdown
+    this._roadSection.append(el('label', null, 'Guard Rails'));
+    this._guardRailSelect = el('select');
+    for (const [val, lbl] of [
+      ['none', 'None'],
+      ['both', 'Both Edges'],
+      ['left', 'Left Edge Only'],
+      ['right', 'Right Edge Only'],
+    ]) {
+      const opt = el('option', null, lbl);
+      opt.value = val;
+      this._guardRailSelect.appendChild(opt);
+    }
+    this._guardRailSelect.addEventListener('change', () => {
+      const segId = this._segmentSelect.value;
+      const mode = this._guardRailSelect.value;
+      this.editor.defaultGuardRails = mode;
+      if (segId) this.editor.setSegmentGuardRails(segId, mode);
+    });
+    this._roadSection.appendChild(this._guardRailSelect);
+
+    // Intersection Style Dropdown (Square vs Roundabout)
+    this._roadSection.append(el('label', null, 'Intersection Style'));
+    this._intersectionTypeSelect = el('select');
+    for (const [val, lbl] of [
+      ['square', 'Square / Box Junction'],
+      ['roundabout', 'Roundabout (Circle)'],
+    ]) {
+      const opt = el('option', null, lbl);
+      opt.value = val;
+      this._intersectionTypeSelect.appendChild(opt);
+    }
+    this._intersectionTypeSelect.addEventListener('change', () => {
+      const seg = this.editor.getSelectedSegment();
+      const style = this._intersectionTypeSelect.value;
+      this.editor.defaultIntersectionType = style;
+      if (seg) {
+        this.editor.setNodeIntersectionType(seg.startNodeId, style);
+        this.editor.setNodeIntersectionType(seg.endNodeId, style);
+      }
+    });
+    this._roadSection.appendChild(this._intersectionTypeSelect);
+
+    this._roadSection.append(el('p', 'editor-hint',
+      'Esc / right-click ends a chain. Click near an existing node to connect. 2 roads = continuous bend; 3+ roads = Square or Roundabout junction.'));
 
     // ---- Building -----------------------------------------------------------
     this._buildingSection = el('div');
@@ -198,17 +261,29 @@ export class EditorUI {
     });
     this._buildingSection.appendChild(heightInput);
 
-    this._buildingSection.append(el('label', null, 'Gizmo'));
-    const gizmoSelect = el('select');
-    for (const [value, label] of [['translate', 'Move'], ['rotate', 'Rotate'], ['scale', 'Scale']]) {
+    this._buildingSection.append(el('label', null, 'Gizmo (W / E / R)'));
+    this._gizmoSelect = el('select');
+    for (const [value, label] of [['translate', 'Move (W)'], ['rotate', 'Rotate (E)'], ['scale', 'Scale (R)']]) {
       const option = el('option', null, label);
       option.value = value;
-      gizmoSelect.appendChild(option);
+      this._gizmoSelect.appendChild(option);
     }
-    gizmoSelect.addEventListener('change', () => this.editor.gizmoManager.setMode(gizmoSelect.value));
-    this._buildingSection.appendChild(gizmoSelect);
+    this._gizmoSelect.addEventListener('change', () => this.editor.gizmoManager.setMode(this._gizmoSelect.value));
+    this._buildingSection.appendChild(this._gizmoSelect);
+
+    const deleteBuildingBtn = el('button', 'editor-btn', 'Delete Selected Building');
+    deleteBuildingBtn.style.marginTop = '8px';
+    deleteBuildingBtn.style.width = '100%';
+    deleteBuildingBtn.addEventListener('click', () => {
+      const attached = this.editor.gizmoManager.attached;
+      if (attached?.userData?.building) {
+        this.editor.removeBuilding(attached.userData.building);
+      }
+    });
+    this._buildingSection.appendChild(deleteBuildingBtn);
+
     this._buildingSection.append(el('p', 'editor-hint',
-      'Drag a box on open ground to place. Click a building to select it, then drag its handles — collision checks run on release.'));
+      'Click or drag on open ground to place. Click a building to select it. Drag gizmo handles or use W: Move, E: Rotate, R: Scale, Del: Delete.'));
 
     // ---- Obstruction --------------------------------------------------------
     this._obstructionSection = el('div');
@@ -256,6 +331,12 @@ export class EditorUI {
     if (this._status) this._status.textContent = text;
   }
 
+  setGizmoMode(mode) {
+    if (this._gizmoSelect) {
+      this._gizmoSelect.value = mode;
+    }
+  }
+
   setActiveTool(name) {
     for (const [toolName, button] of Object.entries(this._toolButtons)) {
       button.classList.toggle('active', toolName === name);
@@ -287,19 +368,29 @@ export class EditorUI {
       option.value = '';
       this._segmentSelect.appendChild(option);
       this._segmentSelect.value = '';
-      this._lanesForwardInput.disabled = true;
-      this._lanesBackwardInput.disabled = true;
-      this._lanesForwardInput.value = '';
-      this._lanesBackwardInput.value = '';
+      this._lanesSlider.disabled = true;
+      this._guardRailSelect.disabled = true;
+      this._lanesValueText.textContent = '';
       return;
     }
     this._segmentSelect.value = ids.includes(selected) ? selected : ids[0];
 
     const segment = this.editor.getSelectedSegment();
-    this._lanesForwardInput.disabled = this._lanesBackwardInput.disabled = !segment;
+    this._lanesSlider.disabled = !segment;
+    this._guardRailSelect.disabled = !segment;
+    this._intersectionTypeSelect.disabled = !segment;
     if (segment) {
-      this._lanesForwardInput.value = String(segment.lanesForward);
-      this._lanesBackwardInput.value = String(segment.lanesBackward);
+      const lanes = Math.max(1, Math.min(4, Math.max(segment.lanesForward, segment.lanesBackward)));
+      this._lanesSlider.value = String(lanes);
+      this._lanesValueText.textContent = ` (${lanes} lane${lanes > 1 ? 's' : ''} each side · ${lanes * 2} total)`;
+      this._guardRailSelect.value = segment.guardRails || 'none';
+
+      const startNode = this.editor.network?.getNode(segment.startNodeId);
+      const endNode = this.editor.network?.getNode(segment.endNodeId);
+      const style = (endNode?.intersectionType === 'roundabout' || startNode?.intersectionType === 'roundabout')
+        ? 'roundabout'
+        : 'square';
+      this._intersectionTypeSelect.value = style;
     }
   }
 
@@ -330,13 +421,19 @@ export class EditorUI {
     }
   }
 
-  _applyLanes() {
+  _applyBalancedLanes() {
     const segmentId = this._segmentSelect.value;
     if (!segmentId) return;
-    const forward = Number(this._lanesForwardInput.value);
-    const backward = Number(this._lanesBackwardInput.value);
-    if (!Number.isFinite(forward) || !Number.isFinite(backward)) return;
-    this.editor.setSegmentLanes(segmentId, forward, backward);
+    const count = Number(this._lanesSlider.value);
+    if (!Number.isFinite(count) || count < 1) return;
+    this._lanesValueText.textContent = ` (${count} lane${count > 1 ? 's' : ''} each side · ${count * 2} total)`;
+    this.editor.setSegmentLanes(segmentId, count, count);
+  }
+
+  setLanes(count) {
+    if (!Number.isFinite(count) || count < 1) return;
+    this._lanesSlider.value = String(count);
+    this._lanesValueText.textContent = ` (${count} lane${count > 1 ? 's' : ''} each side · ${count * 2} total)`;
   }
 
   // ---- session actions ------------------------------------------------------

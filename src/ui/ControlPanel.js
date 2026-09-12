@@ -57,6 +57,8 @@ export class ControlPanel {
     this._mapFolder = null;
     this._sensorsFolder = null;
     this._trafficFolder = null;
+    this._cameraFolder = null;
+    this._cameraCleanup = null;
     this._sensorReadoutController = null;
     this._gpuSensorsToggle = null;
   }
@@ -84,7 +86,7 @@ export class ControlPanel {
         markingBuilder.rebuild(segment);
         // Rebuild intersections at both endpoints.
         for (const nodeId of [segment.startNodeId, segment.endNodeId]) {
-          intersectionBuilder.rebuild(nodeId, network);
+          intersectionBuilder.rebuildAtNode(network, nodeId);
         }
         // Resolve building collisions.
         collisionResolver.resolveForSegment(segment, buildingManager);
@@ -170,9 +172,17 @@ export class ControlPanel {
 
   // ---- Sensors folder -------------------------------------------------------
 
-  addSensorsFolder({ visualizer, frontCamera, gpuSensors = null }) {
+  addSensorsFolder({ visualizer, frontCamera, autoDrive = null }) {
     this.removeSensorsFolder();
     const folder = this._gui.addFolder('Sensors');
+
+    // Auto-drive toggle (at the top for prominence)
+    if (autoDrive) {
+      const adState = { autoDrive: false };
+      this._autoDriveToggle = folder.add(adState, 'autoDrive').name('🤖 Auto Drive [T / 🎮Y]').onChange((v) => {
+        autoDrive.onToggle(v);
+      });
+    }
 
     // Ray visualizer toggle.
     const vizState = { showRays: visualizer.enabled ?? visualizer.visible ?? false };
@@ -188,27 +198,6 @@ export class ControlPanel {
       else frontCamera.enabled = v;
     });
 
-    // GPU sensors toggle (only when WebGPU is available).
-    if (gpuSensors) {
-      const gpuState = { gpuSensors: false };
-      this._gpuSensorsToggle = folder.add(gpuState, 'gpuSensors').name('GPU sensors').onChange((v) => {
-        gpuSensors.onToggle(v);
-      });
-    }
-
-    // Sensor readout (preformatted text).
-    const readoutState = { readout: '' };
-    this._sensorReadoutController = folder.add(readoutState, 'readout').name('Readout').disable();
-    // Make it a larger text display.
-    const readoutEl = this._sensorReadoutController.domElement;
-    if (readoutEl) {
-      const inputEl = readoutEl.querySelector('input');
-      if (inputEl) {
-        inputEl.style.fontFamily = 'monospace';
-        inputEl.style.fontSize = '10px';
-      }
-    }
-
     folder.open();
     this._sensorsFolder = folder;
   }
@@ -219,6 +208,7 @@ export class ControlPanel {
       this._sensorsFolder = null;
       this._sensorReadoutController = null;
       this._gpuSensorsToggle = null;
+      this._autoDriveToggle = null;
     }
   }
 
@@ -243,9 +233,27 @@ export class ControlPanel {
     this._gpuSensorsToggle.updateDisplay();
   }
 
+  /**
+   * Programmatically set the auto-drive toggle (e.g. when auto-drive
+   * disengages on arrival, or is toggled by hotkey).
+   * @param {boolean} enabled
+   */
+  updateAutoDriveToggle(enabled) {
+    if (!this._autoDriveToggle) return;
+    this._autoDriveToggle.object.autoDrive = enabled;
+    this._autoDriveToggle.updateDisplay();
+  }
+
   // ---- Traffic folder -------------------------------------------------------
 
-  addTrafficFolder({ lodManager, onSpawnNpcs }) {
+  addTrafficFolder({
+    lodManager,
+    onSpawnNpcs,
+    onAddCarAhead = null,
+    onAddOncomingCar = null,
+    onAddStoppedCar = null,
+    onClearTraffic = null,
+  }) {
     this.removeTrafficFolder();
     const folder = this._gui.addFolder('Traffic / V2V');
 
@@ -254,17 +262,31 @@ export class ControlPanel {
       spawnCount: 50,
     };
 
+    if (onAddCarAhead) {
+      folder.add({ addAhead: () => onAddCarAhead() }, 'addAhead').name('🚗 + Add Car Ahead [C]');
+    }
+    if (onAddOncomingCar) {
+      folder.add({ addOncoming: () => onAddOncomingCar() }, 'addOncoming').name('⚠️ + Oncoming Car [O]');
+    }
+    if (onAddStoppedCar) {
+      folder.add({ addStopped: () => onAddStoppedCar() }, 'addStopped').name('🛑 + Stopped Car Ahead');
+    }
+
     folder
       .add(state, 'promoteN', 0, ConfigDefaults.lod.promoteNearestNMax, 1)
       .name('Promote N NPCs')
       .onChange((v) => lodManager.setPromoteNearestN(v));
 
-    folder.add(state, 'spawnCount', 10, 200, 10).name('Spawn count');
+    folder.add(state, 'spawnCount', 10, 200, 10).name('Traffic batch count');
     folder
       .add({ spawn: () => onSpawnNpcs(state.spawnCount) }, 'spawn')
-      .name('🚗 Spawn NPCs');
+      .name('🚗 Spawn Traffic Batch');
 
-    folder.close();
+    if (onClearTraffic) {
+      folder.add({ clear: () => onClearTraffic() }, 'clear').name('🧹 Clear All Traffic [X]');
+    }
+
+    folder.open();
     this._trafficFolder = folder;
   }
 
@@ -275,9 +297,46 @@ export class ControlPanel {
     }
   }
 
+  // ---- Camera folder --------------------------------------------------------
+
+  addCameraFolder({ cameraRig }) {
+    this.removeCameraFolder();
+    const folder = this._gui.addFolder('Camera View');
+    const state = {
+      view: cameraRig.mode === 'first' ? 'Cockpit' : '3rd Person',
+    };
+    const ctrl = folder
+      .add(state, 'view', ['3rd Person', 'Cockpit'])
+      .name('View Mode')
+      .onChange((v) => {
+        cameraRig.setMode(v === 'Cockpit' ? 'first' : 'third');
+      });
+
+    const onModeChanged = ({ mode }) => {
+      state.view = mode === 'first' ? 'Cockpit' : '3rd Person';
+      ctrl.updateDisplay();
+    };
+    this._bus?.on('camera:mode-changed', onModeChanged);
+    folder.open();
+    this._cameraFolder = folder;
+    this._cameraCleanup = () => {
+      this._bus?.off('camera:mode-changed', onModeChanged);
+    };
+  }
+
+  removeCameraFolder() {
+    this._cameraCleanup?.();
+    this._cameraCleanup = null;
+    if (this._cameraFolder) {
+      this._cameraFolder.destroy();
+      this._cameraFolder = null;
+    }
+  }
+
   // ---- Lifecycle ------------------------------------------------------------
 
   dispose() {
+    this.removeCameraFolder();
     this._gui.destroy();
   }
 }

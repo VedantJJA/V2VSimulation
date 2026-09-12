@@ -1,5 +1,5 @@
-import { EgoVehicle } from './EgoVehicle.js';
-import { NPCVehicle } from './NPCVehicle.js';
+import { EgoVehicle, NPCVehicle } from './Vehicle.js';
+import { KinematicBicycleModel } from './KinematicBicycleModel.js';
 import { SplineUtils } from '../road/SplineUtils.js';
 import { createVehicleMesh } from '../utils/GeometryUtils.js';
 import { AssetLoader } from '../core/AssetLoader.js';
@@ -10,19 +10,6 @@ const VEHICLE = ConfigDefaults.vehicle;
 
 /**
  * VehicleFactory — spawns Ego/NPC vehicles at network locations.
- *
- * resolveSpawnPose() is the shared placement core (lane-center pose at
- * distanceAlongM, travel heading from the lane direction).
- *
- * MODELS (Phase 11): call preloadModels() once after construction; it loads
- * ConfigDefaults.vehicle.modelUrl through AssetLoader. When the GLTF loads,
- * every spawn clones it (geometries/materials shared). When it fails (or
- * the file is absent), each spawn gets the per-paint fallback car instead —
- * preserving the ego/NPC color identity. Without preloadModels(), spawns
- * always use fallbacks.
- *
- * Every spawned vehicle carries `spawnInfo` (its network location) for the
- * "edit this map" round-trip.
  */
 export class VehicleFactory {
   /**
@@ -38,15 +25,10 @@ export class VehicleFactory {
     /** @type {import('./Vehicle.js').Vehicle[]} */
     this.vehicles = [];
     this._npcCount = 0;
-    /** @type {THREE.Group | null} shared GLTF car model (null → fallbacks) */
     this._carModel = null;
     this._modelPreload = null;
   }
 
-  /**
-   * Load the shared vehicle GLTF once. Resolves with the model (or null when
-   * the load failed and fallbacks apply). Idempotent.
-   */
   async preloadModels() {
     if (!this._modelPreload) {
       this._modelPreload = AssetLoader.loadModel(VEHICLE.modelUrl).then((model) => {
@@ -57,10 +39,6 @@ export class VehicleFactory {
     return this._modelPreload;
   }
 
-  /**
-   * Lane-center pose at (segment, lane, distanceAlongM).
-   * @returns {{ position: import('three').Vector3, headingRad: number }}
-   */
   resolveSpawnPose({
     segmentId,
     lane = 0,
@@ -80,16 +58,11 @@ export class VehicleFactory {
     position.y = y;
 
     const tangent = segment.getCurve().getTangentAt(u);
-    const travel = lane >= 0 ? 1 : -1; // backward lanes drive against the tangent
+    const travel = lane >= 0 ? 1 : -1;
     const headingRad = Math.atan2(tangent.x * travel, -tangent.z * travel);
     return { position, headingRad };
   }
 
-  /**
-   * Spawn the player's car. Defaults to the physics model; pass motionModel
-   * for an alternative (e.g. KinematicBicycleModel).
-   * @returns {import('./EgoVehicle.js').EgoVehicle}
-   */
   spawnEgo({
     segmentId,
     lane = 0,
@@ -99,10 +72,18 @@ export class VehicleFactory {
     paintColor = VEHICLE.egoPaintHex,
   }) {
     const spawnPose = segmentId != null
-      ? this.resolveSpawnPose({ segmentId, lane, distanceAlongM, y: VEHICLE.physicsSpawnHeightM })
+      ? this.resolveSpawnPose({ segmentId, lane, distanceAlongM, y: VEHICLE.kinematicRideHeightM })
       : null;
+    const egoMotion = motionModel ?? (spawnPose ? new KinematicBicycleModel({
+      position: spawnPose.position,
+      headingRad: spawnPose.headingRad,
+      maxSpeedMps: ConfigDefaults.vehicle.bicycle.maxSpeedMps,
+      engineAccelMps2: 6.5,
+      brakeDecelMps2: 12.0,
+      maxSteerRad: 0.58,
+    }) : null);
     const ego = new EgoVehicle({
-      motionModel: motionModel ?? null,
+      motionModel: egoMotion,
       physicsWorld: this._physicsWorld,
       spawnPose,
       controller,
@@ -117,10 +98,6 @@ export class VehicleFactory {
     return ego;
   }
 
-  /**
-   * Spawn an AI car on a lane, driven by a WaypointFollower.
-   * @returns {import('./NPCVehicle.js').NPCVehicle}
-   */
   spawnNPC({
     segmentId,
     lane = -1,
@@ -148,21 +125,28 @@ export class VehicleFactory {
       sceneManager: this._sceneManager,
     });
     npc.spawnInfo = { segmentId, lane, distanceAlongM, isEgo: false, targetSpeedMps };
+    npc.waypointFollower?.setVehicles(this.vehicles);
     this.vehicles.push(npc);
     return npc;
   }
 
-  /** Shared model clone, or the per-paint fallback car. */
   _meshFor(paintColor) {
     return this._carModel ? this._carModel.clone(true) : createVehicleMesh(paintColor);
   }
 
-  /** Update every spawned vehicle (registered once in main's update order). */
   updateAll(dt) {
     for (const vehicle of this.vehicles) vehicle.update(dt);
   }
 
-  /** Dispose all vehicles (meshes + physics models). */
+  clearNPCs() {
+    const npcs = this.vehicles.filter((v) => !v.isEgo);
+    for (const npc of npcs) {
+      npc.dispose();
+      const idx = this.vehicles.indexOf(npc);
+      if (idx !== -1) this.vehicles.splice(idx, 1);
+    }
+  }
+
   disposeAll() {
     for (const vehicle of [...this.vehicles]) vehicle.dispose();
     this.vehicles.length = 0;

@@ -9,17 +9,16 @@ const PREVIEW_BOX_GEOMETRY = new THREE.BoxGeometry(1, 1, 1);
 const MIN_FOOTPRINT_M = 2;
 const MIN_HEIGHT_M = 2;
 
-const PLACE_HINT = 'Drag on open ground to place a building — click a building to select it';
+const PLACE_HINT = 'Click or drag on open ground to place a building — click an existing building to select it';
 const SELECTED_HINT =
-  'Building selected — pick Move/Rotate/Scale in the panel, drag the handles; collision checks run on release';
+  'Building selected — drag gizmo handles or press W (Move) / E (Rotate) / R (Scale). Press Delete to remove.';
 
 /**
- * BuildingPlaceTool — click-drag placement + selection.
+ * BuildingPlaceTool — click or drag placement + selection.
  *
- * Drag on open ground: the drag rectangle becomes the axis-aligned footprint
- * (height from the panel). Click an existing building instead: selects it and
- * attaches the gizmo; the gizmo's commit path (MapEditor._commitGizmo) syncs
- * the transform into Building data and runs CollisionResolver validation.
+ * Click or drag on open ground: places a building (drag shapes the footprint).
+ * Click an existing building: selects it and attaches the gizmo.
+ * When a building is selected, clicking open ground deselects it without placing.
  */
 export class BuildingPlaceTool {
   constructor(editor) {
@@ -28,6 +27,7 @@ export class BuildingPlaceTool {
     this.newBuildingHeightM = 12;
     this._dragStart = null;
     this._inScene = false;
+    this._wasDeselecting = false;
 
     this._previewMesh = new THREE.Mesh(PREVIEW_BOX_GEOMETRY, DRAG_PREVIEW_MATERIAL);
     this._previewMesh.name = 'editor:building-preview';
@@ -43,6 +43,7 @@ export class BuildingPlaceTool {
   onDisable() {
     this._removeFromScene();
     this._dragStart = null;
+    this._previewMesh.visible = false;
   }
 
   onPointerDown(event, point) {
@@ -52,17 +53,30 @@ export class BuildingPlaceTool {
     if (building) {
       this.editor.selectBuilding(building);
       this.editor.ui.setStatus(SELECTED_HINT);
+      this._dragStart = null;
+      this._wasDeselecting = false;
       return;
     }
 
-    this.editor.deselectBuilding();
+    const hadSelection = !!this.editor.gizmoManager.attached;
+    if (hadSelection) {
+      this.editor.deselectBuilding();
+      this.editor.ui.setStatus(PLACE_HINT);
+      this._wasDeselecting = true;
+    } else {
+      this._wasDeselecting = false;
+    }
+
     this._dragStart = point.clone();
-    this._updatePreview(point);
   }
 
   onPointerMove(event, point) {
     if (!this._dragStart || !point) return;
-    this._updatePreview(point);
+    const dist = Math.hypot(point.x - this._dragStart.x, point.z - this._dragStart.z);
+    if (dist > 1.5) {
+      this._wasDeselecting = false;
+      this._updatePreview(point);
+    }
   }
 
   onPointerUp(event, point) {
@@ -71,14 +85,31 @@ export class BuildingPlaceTool {
       this._previewMesh.visible = false;
       return;
     }
-    const { center, size } = this._footprint(this._dragStart, point);
+    const dist = Math.hypot(point.x - this._dragStart.x, point.z - this._dragStart.z);
+    const wasDeselect = this._wasDeselecting && dist < 1.5;
+    const start = this._dragStart;
     this._dragStart = null;
     this._previewMesh.visible = false;
+
+    if (wasDeselect) return;
+
+    let width, depth, center;
+    if (dist < 1.5) {
+      // Single click placement: default 10m x 10m footprint
+      width = 10;
+      depth = 10;
+      center = start;
+    } else {
+      const fp = this._footprint(start, point);
+      width = fp.size[0];
+      depth = fp.size[1];
+      center = fp.center;
+    }
 
     const height = Math.max(MIN_HEIGHT_M, this.newBuildingHeightM);
     const building = this.editor.addBuilding({
       position: [center.x, 0, center.z],
-      size: [size[0], size[1], height],
+      size: [width, depth, height],
       rotationY: 0,
     });
     if (building) this.editor.ui.setStatus(SELECTED_HINT);

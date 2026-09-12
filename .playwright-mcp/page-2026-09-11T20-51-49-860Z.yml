@@ -1,0 +1,16 @@
+- generic [ref=e3]:
+  - button "▾ Controls" [expanded] [ref=e4] [cursor=pointer]
+  - generic [ref=e6]:
+    - button "▾ Environment" [expanded] [ref=e7] [cursor=pointer]
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]: Time of day
+        - generic [ref=e11] [cursor=pointer]:
+          - combobox "Time of day" [ref=e12]:
+            - option "dawn"
+            - option "day" [selected]
+            - option "night"
+          - generic: day ↕
+      - generic [ref=e13]:
+        - generic [ref=e14]: Fog density
+        - textbox "Fog density" [ref=e18]: "0.0025"

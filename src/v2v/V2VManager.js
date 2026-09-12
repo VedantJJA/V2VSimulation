@@ -1,11 +1,136 @@
-import { NeighborIndex } from './NeighborIndex.js';
-import { VehicleStateBroadcaster } from './VehicleStateBroadcaster.js';
 import { BSMProtocol } from './BSMProtocol.js';
 import { SensorStack } from '../sensors/SensorStack.js';
 import { ConfigDefaults } from '../state/ConfigDefaults.js';
 import { AppState } from '../state/AppState.js';
+import { SpatialGrid } from '../buildings/BuildingManager.js';
 
 const V2V = ConfigDefaults.v2v;
+const VEHICLE_PROXY_HALF = ConfigDefaults.vehicle.vehicleProxyHalf;
+
+/**
+ * NeighborIndex — V2V radius queries over all vehicles, built on SpatialGrid.
+ */
+export class NeighborIndex {
+  /**
+   * @param {object} [options]
+   * @param {number} [options.radiusM] default: ConfigDefaults.v2v.radiusM
+   * @param {number} [options.cellSizeM] default: ConfigDefaults.v2v.neighborCellSizeM
+   */
+  constructor({ radiusM = V2V.radiusM, cellSizeM = V2V.neighborCellSizeM } = {}) {
+    this.radiusM = radiusM;
+    /** @type {import('../vehicles/Vehicle.js').Vehicle[]} */
+    this._vehicles = [];
+    /** @type {Map<any, { vehicle: any, aabb: any }>} */
+    this._proxies = new Map();
+    this._grid = new SpatialGrid({ cellSize: cellSizeM, getBounds: (proxy) => proxy.aabb });
+  }
+
+  setVehicles(vehicles) {
+    this._vehicles = vehicles ?? [];
+  }
+
+  setRadius(radiusM) {
+    this.radiusM = radiusM;
+  }
+
+  update() {
+    for (const vehicle of this._vehicles) {
+      if (!vehicle?.motionModel) continue;
+      this._updateProxy(vehicle, vehicle.motionModel.getState());
+    }
+  }
+
+  query(vehicle, radiusM = this.radiusM) {
+    const state = vehicle.motionModel.getState();
+    const candidates = this._grid.queryRadius(state.position, radiusM);
+
+    const result = [];
+    for (const proxy of candidates) {
+      const other = proxy.vehicle;
+      if (other === vehicle) continue;
+      const otherState = other.motionModel.getState();
+      const dx = otherState.position.x - state.position.x;
+      const dz = otherState.position.z - state.position.z;
+      const distanceM = Math.hypot(dx, dz);
+      if (distanceM <= radiusM) result.push({ vehicle: other, distanceM });
+    }
+    result.sort((a, b) => a.distanceM - b.distanceM);
+    return result;
+  }
+
+  dispose() {
+    this._grid.clear();
+    this._proxies.clear();
+    this._vehicles = [];
+  }
+
+  _updateProxy(vehicle, state) {
+    let proxy = this._proxies.get(vehicle);
+    if (!proxy) {
+      proxy = { vehicle, aabb: { minX: 0, minZ: 0, maxX: 0, maxZ: 0 } };
+      this._proxies.set(vehicle, proxy);
+      this._grid.insert(proxy);
+    }
+
+    const h = state.headingRad;
+    const cos = Math.cos(h);
+    const sin = Math.sin(h);
+    const extentX = VEHICLE_PROXY_HALF.width * Math.abs(cos) + VEHICLE_PROXY_HALF.length * Math.abs(sin);
+    const extentZ = VEHICLE_PROXY_HALF.width * Math.abs(sin) + VEHICLE_PROXY_HALF.length * Math.abs(cos);
+    proxy.aabb.minX = state.position.x - extentX;
+    proxy.aabb.maxX = state.position.x + extentX;
+    proxy.aabb.minZ = state.position.z - extentZ;
+    proxy.aabb.maxZ = state.position.z + extentZ;
+
+    this._grid.update(proxy);
+  }
+}
+
+/**
+ * VehicleStateBroadcaster — produces per-vehicle broadcast payloads.
+ */
+export class VehicleStateBroadcaster {
+  constructor() {
+    /** @type {WeakMap<any, { speedMps: number, headingRad: number }>} */
+    this._previousStates = new WeakMap();
+  }
+
+  broadcastBSM(vehicle, dt, timestampSec) {
+    const state = vehicle.motionModel.getState();
+    const bsm = BSMProtocol.encode(vehicle, state, {
+      timestampSec,
+      dt,
+      lastControlInput: vehicle.lastControlInput,
+      previousState: this._previousStates.get(vehicle),
+    });
+    this._previousStates.set(vehicle, { speedMps: state.speedMps, headingRad: state.headingRad });
+    return bsm;
+  }
+
+  broadcastFrame(vehicle, sensorStack, bsm, timestampSec) {
+    const state = vehicle.motionModel.getState();
+    const proximity = sensorStack.proximity.readings;
+    const lane = sensorStack.laneCentering.readings;
+    return {
+      vehicleId: vehicle.id,
+      timestampSec,
+      pose: {
+        x: state.position.x,
+        y: state.position.y,
+        z: state.position.z,
+        headingRad: state.headingRad,
+        speedMps: state.speedMps,
+      },
+      bsm,
+      proximityM: { ...proximity.proximityM },
+      hitKind: { ...proximity.hitKind },
+      lane: { ...lane },
+      v2vNeighbors: [],
+      v2vLinks: null,
+      v2vAlerts: [],
+    };
+  }
+}
 
 /**
  * Lane provider for NPC vehicles: their WaypointFollower IS the lane

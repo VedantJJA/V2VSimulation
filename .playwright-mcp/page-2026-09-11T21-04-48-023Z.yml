@@ -1,0 +1,25 @@
+- generic [active] [ref=f17e1]:
+  - generic [ref=f17e3]:
+    - button "▾ Controls" [expanded] [ref=f17e4] [cursor=pointer]
+    - generic [ref=f17e6]:
+      - button "▾ Environment" [expanded] [ref=f17e7] [cursor=pointer]
+      - generic [ref=f17e8]:
+        - generic [ref=f17e9]:
+          - generic [ref=f17e10]: Time of day
+          - generic [ref=f17e11] [cursor=pointer]:
+            - combobox "Time of day" [ref=f17e12]:
+              - option "dawn"
+              - option "day" [selected]
+              - option "night"
+            - generic: day ↕
+        - generic [ref=f17e13]:
+          - generic [ref=f17e14]: Fog density
+          - textbox "Fog density" [ref=f17e18]: "0.0025"
+  - generic [ref=f17e20]:
+    - heading "Road Network Sandbox" [level=1] [ref=f17e21]
+    - paragraph [ref=f17e22]: Choose a mode to start
+    - button "Edit Map" [ref=f17e23] [cursor=pointer]
+    - button "Run Simulation" [ref=f17e24] [cursor=pointer]
+    - generic [ref=f17e25]: — or —
+    - generic [ref=f17e26] [cursor=pointer]: Run a saved map file…
+    - paragraph [ref=f17e27]: Edit Map starts a blank world with drawing tools.

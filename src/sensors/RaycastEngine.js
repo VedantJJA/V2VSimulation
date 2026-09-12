@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
-import { SpatialGrid } from '../buildings/SpatialGrid.js';
+import { SpatialGrid } from '../buildings/BuildingManager.js';
 import { ConfigDefaults } from '../state/ConfigDefaults.js';
 
 // Install three-mesh-bvh globally (standard usage). Meshes whose geometry

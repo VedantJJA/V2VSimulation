@@ -1,0 +1,43 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - button "▾ Controls" [expanded] [ref=e4] [cursor=pointer]
+    - generic [ref=e6]:
+      - button "▾ Environment" [expanded] [ref=e7] [cursor=pointer]
+      - generic [ref=e8]:
+        - generic [ref=e9]:
+          - generic [ref=e10]: Time of day
+          - generic [ref=e11] [cursor=pointer]:
+            - combobox "Time of day" [ref=e12]:
+              - option "dawn"
+              - option "day" [selected]
+              - option "night"
+            - generic: day ↕
+        - generic [ref=e13]:
+          - generic [ref=e14]: Fog density
+          - textbox "Fog density" [ref=e18]: "0.0025"
+  - generic:
+    - generic [ref=e28]:
+      - button "Road" [ref=e29] [cursor=pointer]
+      - button "Building" [ref=e30] [cursor=pointer]
+      - button "Obstruction" [ref=e31] [cursor=pointer]
+      - button "Vehicle" [ref=e32] [cursor=pointer]
+      - button "Top" [ref=e34] [cursor=pointer]
+      - button "Orbit" [ref=e35] [cursor=pointer]
+      - button "↺ Undo" [ref=e37] [cursor=pointer]
+      - button "Save" [ref=e38] [cursor=pointer]
+      - button "Load" [ref=e39] [cursor=pointer]
+      - button "Run Simulation ▸" [ref=e40] [cursor=pointer]
+    - generic [ref=e42]:
+      - heading "Road" [level=3] [ref=e43]
+      - generic [ref=e44]: Segment
+      - combobox [ref=e45]:
+        - option "— none —" [selected]
+      - generic [ref=e46]:
+        - generic [ref=e47]:
+          - generic [ref=e48]: lanes → (fwd)
+          - spinbutton [disabled] [ref=e49]
+        - generic [ref=e50]:
+          - generic [ref=e51]: lanes ← (bwd)
+          - spinbutton [disabled] [ref=e52]
+      - paragraph [ref=e53]: Esc / right-click ends a chain. Click near an existing node to connect — shared nodes become intersections.
+    - generic [ref=e54]: Click on open ground to start a road…

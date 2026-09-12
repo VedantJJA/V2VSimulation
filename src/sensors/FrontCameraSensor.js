@@ -106,6 +106,14 @@ export class FrontCameraSensor {
     this._ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     this._size = new THREE.Vector2();
 
+    this.laneReadings = {
+      detected: false,
+      lateralOffsetM: 0,
+      headingErrorRad: 0,
+    };
+    this._pixelBuffer = new Uint8Array(resolution * resolution * 4);
+    this._laneScanTimer = 0;
+
     this._unsubscribePostRender = engine.addPostRender(() => this._drawPip());
   }
 
@@ -122,7 +130,11 @@ export class FrontCameraSensor {
     }
   }
 
-  /** Render the sensor frame + edge pass. No-op while disabled. */
+  getLaneReadings() {
+    return this.laneReadings;
+  }
+
+  /** Render the sensor frame + edge pass and compute camera-feed lane centering. */
   update(dt) {
     if (!this._enabled) return;
 
@@ -140,12 +152,141 @@ export class FrontCameraSensor {
     const renderer = this._renderer;
     const shadowAutoUpdate = renderer.shadowMap.autoUpdate;
     renderer.shadowMap.autoUpdate = false; // reuse existing shadow maps
+
+    // Temporarily hide externally drawn overlays so the front camera only sees real world scenery
+    const hiddenObjects = [];
+    this._scene.traverse((obj) => {
+      if (
+        obj.visible &&
+        (obj.userData?.isExternalOverlay ||
+          (obj.name &&
+            (obj.name.startsWith('sensors:') ||
+              obj.name.startsWith('lane-guide:') ||
+              obj.name.startsWith('laneGuide') ||
+              obj.name.startsWith('navigation:') ||
+              obj.name.startsWith('v2v:') ||
+              obj.name.startsWith('editor:') ||
+              obj.name.startsWith('gizmo:') ||
+              obj.name.startsWith('spawn-preview:') ||
+              obj.name.startsWith('debug:'))))
+      ) {
+        obj.visible = false;
+        hiddenObjects.push(obj);
+      }
+    });
+
     renderer.setRenderTarget(this._colorTarget);
     renderer.render(this._scene, this.camera);
     renderer.setRenderTarget(this._edgeTarget);
     renderer.render(this._passScene, this._ortho);
+
+    // Restore visibility of externally drawn overlays for main viewport
+    for (const obj of hiddenObjects) {
+      obj.visible = true;
+    }
+
+    // Compute Camera-based Lane Centering from the edge target at 20 Hz
+    this._laneScanTimer += dt;
+    if (this._laneScanTimer >= 0.05) {
+      this._laneScanTimer = 0;
+      this._detectLanesFromEdgeFeed(renderer);
+    }
+
     renderer.setRenderTarget(null);
     renderer.shadowMap.autoUpdate = shadowAutoUpdate;
+  }
+
+  /**
+   * Scan horizontal rows in the bottom half of the edge image to detect lane boundaries
+   * and compute visual cross-track error and heading offset.
+   */
+  _detectLanesFromEdgeFeed(renderer) {
+    const W = this._resolution;
+    const H = this._resolution;
+    try {
+      renderer.readRenderTargetPixels(this._edgeTarget, 0, 0, W, H, this._pixelBuffer);
+    } catch {
+      return;
+    }
+
+    // Sample two horizontal rows: near road row (y ~ 20%) and far road row (y ~ 35%)
+    const scanRow = (rowY) => {
+      const y = Math.floor(rowY * H);
+      const rowOffset = y * W * 4;
+      const midX = Math.floor(W / 2);
+
+      let leftX = -1;
+      let rightX = -1;
+
+      // Scan left from center
+      for (let x = midX - 4; x >= 6; x--) {
+        const val = this._pixelBuffer[rowOffset + x * 4]; // R channel of Sobel edge
+        if (val > 80) {
+          leftX = x;
+          break;
+        }
+      }
+
+      // Scan right from center
+      for (let x = midX + 4; x <= W - 6; x++) {
+        const val = this._pixelBuffer[rowOffset + x * 4];
+        if (val > 80) {
+          rightX = x;
+          break;
+        }
+      }
+
+      return { leftX, rightX, midX };
+    };
+
+    const near = scanRow(0.20);
+    const far = scanRow(0.35);
+
+    if (near.leftX !== -1 && near.rightX !== -1) {
+      const laneWidthPx = Math.max(20, near.rightX - near.leftX);
+      const visualCenterPx = (near.leftX + near.rightX) / 2;
+      const offsetPx = visualCenterPx - near.midX;
+
+      // Standard lane is ~3.7m wide
+      const metersPerPx = 3.7 / laneWidthPx;
+      const lateralOffsetM = offsetPx * metersPerPx;
+
+      let headingErrorRad = 0;
+      if (far.leftX !== -1 && far.rightX !== -1) {
+        const farCenterPx = (far.leftX + far.rightX) / 2;
+        const deltaX = (farCenterPx - visualCenterPx) * metersPerPx;
+        const deltaY = 6.0; // distance ahead between near and far scan bands in meters
+        headingErrorRad = Math.atan2(deltaX, deltaY);
+      }
+
+      this.laneReadings = {
+        detected: true,
+        lateralOffsetM: clamp(lateralOffsetM, -3.5, 3.5),
+        headingErrorRad: clamp(headingErrorRad, -0.6, 0.6),
+      };
+    } else if (near.leftX !== -1) {
+      // Estimated from single left lane line
+      const estWidthPx = W * 0.45;
+      const visualCenterPx = near.leftX + estWidthPx / 2;
+      const metersPerPx = 3.7 / estWidthPx;
+      this.laneReadings = {
+        detected: true,
+        lateralOffsetM: clamp((visualCenterPx - near.midX) * metersPerPx, -3.5, 3.5),
+        headingErrorRad: 0,
+      };
+    } else if (near.rightX !== -1) {
+      // Estimated from single right lane line
+      const estWidthPx = W * 0.45;
+      const visualCenterPx = near.rightX - estWidthPx / 2;
+      const metersPerPx = 3.7 / estWidthPx;
+      this.laneReadings = {
+        detected: true,
+        lateralOffsetM: clamp((visualCenterPx - near.midX) * metersPerPx, -3.5, 3.5),
+        headingErrorRad: 0,
+      };
+    } else {
+      this.laneReadings.detected = false;
+    }
   }
 
   /** Picture-in-picture overlay — runs after the main render pass. */

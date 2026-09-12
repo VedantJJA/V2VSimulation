@@ -64,6 +64,7 @@ export class GizmoManager {
 
   /** True while the pointer hovers a handle or drags it. */
   get isBusy() {
+    if (!this._attached) return false;
     return this._isDragging || this._controls.axis !== null;
   }
 
@@ -90,20 +91,38 @@ export class GizmoManager {
 
   attach(object) {
     this._attached = object;
-    this._controls.attach(object);
-    this._helper.visible = true;
+    if (this._controls) this._controls.attach(object);
+    if (this._helper) this._helper.visible = true;
   }
 
   detach() {
     this._attached = null;
-    this._controls.detach();
-    this._helper.visible = false;
+    if (this._controls) this._controls.detach();
+    if (this._helper) this._helper.visible = false;
   }
 
   dispose() {
     this.detach();
-    this._engine.sceneManager.remove(this._helper);
-    this._controls.dispose();
+    if (this._helper) {
+      this._engine.sceneManager.remove(this._helper);
+      try {
+        this._helper.traverse?.((child) => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
+            else child.material.dispose();
+          }
+        });
+      } catch (e) {
+        // ignore
+      }
+    }
+    try {
+      this._controls?.disconnect?.();
+      this._controls?.dispose?.();
+    } catch (e) {
+      console.warn('TransformControls disposal warning:', e);
+    }
     this._controls = null;
     this._helper = null;
     this._onCommit = null;

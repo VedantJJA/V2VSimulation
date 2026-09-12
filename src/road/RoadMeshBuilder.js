@@ -27,9 +27,15 @@ export class RoadMeshBuilder {
       map: this.asphaltTexture,
       roughness: 0.94,
       metalness: 0.0,
+      side: THREE.DoubleSide,
     });
+    this.network = null;
     /** @type {Map<string, THREE.Mesh>} */
     this._meshes = new Map();
+  }
+
+  setNetwork(network) {
+    this.network = network;
   }
 
   build(segment) {
@@ -77,10 +83,82 @@ export class RoadMeshBuilder {
     this.asphaltTexture.dispose();
   }
 
+  _getTaperedOffsets(segment) {
+    const W_fwd = segment.halfWidthForwardM;
+    const W_bwd = segment.halfWidthBackwardM;
+    if (!this.network) {
+      return { left: W_bwd, right: W_fwd };
+    }
+
+    const startSegs = this.network.getSegmentsAtNode(segment.startNodeId).filter((s) => s.id !== segment.id);
+    let minStartFwd = segment.lanesForward;
+    let minStartBwd = segment.lanesBackward;
+    for (const s of startSegs) {
+      minStartFwd = Math.min(minStartFwd, s.lanesForward);
+      minStartBwd = Math.min(minStartBwd, s.lanesBackward);
+    }
+
+    const endSegs = this.network.getSegmentsAtNode(segment.endNodeId).filter((s) => s.id !== segment.id);
+    let minEndFwd = segment.lanesForward;
+    let minEndBwd = segment.lanesBackward;
+    for (const s of endSegs) {
+      minEndFwd = Math.min(minEndFwd, s.lanesForward);
+      minEndBwd = Math.min(minEndBwd, s.lanesBackward);
+    }
+
+    const startTotalSegs = this.network.getSegmentsAtNode(segment.startNodeId);
+    const endTotalSegs = this.network.getSegmentsAtNode(segment.endNodeId);
+
+    // Merging/tapering ONLY happens when the junction has MORE than two roads
+    const hasStartTaper = startTotalSegs.length > 2 && (minStartFwd < segment.lanesForward || minStartBwd < segment.lanesBackward);
+    const hasEndTaper = endTotalSegs.length > 2 && (minEndFwd < segment.lanesForward || minEndBwd < segment.lanesBackward);
+
+    if (!hasStartTaper && !hasEndTaper) {
+      return { left: W_bwd, right: W_fwd };
+    }
+
+    const L = Math.max(segment.lengthM, 1);
+    const tMerge = Math.min(25 / L, 0.35);
+
+    const startWFwd = minStartFwd * segment.laneWidthM;
+    const startWBwd = minStartBwd * segment.laneWidthM;
+    const endWFwd = minEndFwd * segment.laneWidthM;
+    const endWBwd = minEndBwd * segment.laneWidthM;
+
+    const smooth = (x) => x * x * (3 - 2 * x);
+
+    const right = (t) => {
+      if (hasStartTaper && t < tMerge) {
+        const factor = smooth(t / tMerge);
+        return startWFwd + (W_fwd - startWFwd) * factor;
+      }
+      if (hasEndTaper && t > 1 - tMerge) {
+        const factor = smooth((1 - t) / tMerge);
+        return endWFwd + (W_fwd - endWFwd) * factor;
+      }
+      return W_fwd;
+    };
+
+    const left = (t) => {
+      if (hasStartTaper && t < tMerge) {
+        const factor = smooth(t / tMerge);
+        return startWBwd + (W_bwd - startWBwd) * factor;
+      }
+      if (hasEndTaper && t > 1 - tMerge) {
+        const factor = smooth((1 - t) / tMerge);
+        return endWBwd + (W_bwd - endWBwd) * factor;
+      }
+      return W_bwd;
+    };
+
+    return { left, right };
+  }
+
   _buildGeometry(segment) {
+    const { left, right } = this._getTaperedOffsets(segment);
     return buildRibbonGeometry(segment.getCurve(), {
-      offsetLeftM: segment.halfWidthBackwardM,
-      offsetRightM: segment.halfWidthForwardM,
+      offsetLeftM: left,
+      offsetRightM: right,
       y: ROAD_SURFACE_Y,
       spacingM: ROAD.sampleSpacingM,
       uvTileM: ASPHALT_TILE_M,

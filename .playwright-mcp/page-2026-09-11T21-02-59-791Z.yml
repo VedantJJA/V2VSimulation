@@ -1,0 +1,47 @@
+- generic [ref=f16e3]:
+  - button "▾ Controls" [expanded] [ref=f16e4] [cursor=pointer]
+  - generic [ref=f16e5]:
+    - generic [ref=f16e6]:
+      - button "▾ Environment" [expanded] [ref=f16e7] [cursor=pointer]
+      - generic [ref=f16e8]:
+        - generic [ref=f16e9]:
+          - generic [ref=f16e10]: Time of day
+          - generic [ref=f16e11] [cursor=pointer]:
+            - combobox "Time of day" [ref=f16e12]:
+              - option "dawn"
+              - option "day" [selected]
+              - option "night"
+            - generic: day ↕
+        - generic [ref=f16e13]:
+          - generic [ref=f16e14]: Fog density
+          - textbox "Fog density" [ref=f16e18]: "0.0025"
+    - generic [ref=f16e19]:
+      - button "▸ Roads (debug)" [ref=f16e20] [cursor=pointer]
+      - text: ▸ ▸ ▸ ▸ ▸ ▸ ▸ ▸ ▸ ▸ ▸ ▸
+    - button "▸ Map" [ref=f16e22] [cursor=pointer]
+    - button "▸ Traffic / V2V" [ref=f16e24] [cursor=pointer]
+    - generic [ref=f16e25]:
+      - button "▾ Sensors" [expanded] [ref=f16e26] [cursor=pointer]
+      - generic [ref=f16e27]:
+        - generic [ref=f16e28] [cursor=pointer]:
+          - generic [ref=f16e29]: Show rays
+          - checkbox "Show rays" [ref=f16e31]
+        - generic [ref=f16e32] [cursor=pointer]:
+          - generic [ref=f16e33]: Front camera
+          - checkbox "Front camera" [ref=f16e35]
+        - generic [ref=f16e36] [cursor=pointer]:
+          - generic [ref=f16e37]: GPU sensors
+          - checkbox "GPU sensors" [ref=f16e39]
+        - generic:
+          - generic: Readout
+          - generic:
+            - textbox "Readout" [disabled]: speed 0.0 m/slane segment-12 · lane -1lat offset 1.41 mheading err -19.6°traffic 1 active · 6 passive · 0 culledv2v 6 neighbors ≤ 250 mbackend cpuproximity (m) front 40.0 front-left 40.0 front-right 40.0 left 40.0 right 40.0 rear-left 40.0 rear-right 40.0 rear 40.0
+    - generic [ref=f16e40]:
+      - button "▾ Camera View" [expanded] [ref=f16e41] [cursor=pointer]
+      - generic [ref=f16e43]:
+        - generic [ref=f16e44]: View Mode
+        - generic [ref=f16e45] [cursor=pointer]:
+          - combobox "View Mode" [ref=f16e46]:
+            - option "3rd Person" [selected]
+            - option "Cockpit"
+          - generic: 3rd Person ↕

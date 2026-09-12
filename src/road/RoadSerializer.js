@@ -1,5 +1,4 @@
-import { RoadNetwork } from './RoadNetwork.js';
-import { RoadObstruction } from './RoadObstruction.js';
+import { RoadNetwork, RoadObstruction } from './RoadNetwork.js';
 
 export const MAP_FORMAT = 'road-network';
 /**
@@ -51,6 +50,7 @@ export class RoadSerializer {
       nodes: Array.from(network.nodes.values(), (node) => ({
         id: node.id,
         position: [node.position.x, node.position.y, node.position.z],
+        intersectionType: node.intersectionType ?? 'square',
       })),
       segments: Array.from(network.segments.values(), (segment) => ({
         id: segment.id,
@@ -61,6 +61,7 @@ export class RoadSerializer {
         lanesBackward: segment.lanesBackward,
         laneWidthM: segment.laneWidthM,
         speedLimitKph: segment.speedLimitKph,
+        guardRails: segment.guardRails ?? 'none',
       })),
       obstructions: Array.from(network.segments.values(), (segment) =>
         segment.obstructions.map((obstruction) => obstruction.toJSON())
@@ -95,35 +96,39 @@ export class RoadSerializer {
    * @param {import('./RoadMeshBuilder.js').RoadMeshBuilder} context.meshBuilder
    * @param {import('./LaneMarkingBuilder.js').LaneMarkingBuilder} context.markingBuilder
    * @param {import('./IntersectionBuilder.js').IntersectionBuilder} [context.intersectionBuilder]
+   * @param {import('./GuardRailBuilder.js').GuardRailBuilder} [context.guardRailBuilder]
    * @param {import('../core/SceneManager.js').SceneManager} [context.sceneManager] obstruction meshes auto-add
    * @param {import('../buildings/BuildingManager.js').BuildingManager} [context.buildingManager] buildings auto-add
    * @returns {{ network: RoadNetwork, vehicleSpawns: Array<object> }}
    */
-  static deserialize(data, context = {}) {
-    if (!data || data.format !== MAP_FORMAT) {
-      throw new Error(`RoadSerializer: not a "${MAP_FORMAT}" map (got format "${data?.format}")`);
-    }
-    if (data.version > MAP_FORMAT_VERSION) {
-      console.warn(`RoadSerializer: map version ${data.version} is newer than supported ${MAP_FORMAT_VERSION}`);
-    }
-
-    const {
+  static deserialize(
+    data,
+    {
       network = new RoadNetwork(),
       meshBuilder,
       markingBuilder,
       intersectionBuilder = null,
+      guardRailBuilder = null,
+      laneMergerBuilder = null,
       sceneManager = null,
       buildingManager = null,
-    } = context;
-    if (!meshBuilder || !markingBuilder) {
-      throw new TypeError('RoadSerializer.deserialize: requires meshBuilder and markingBuilder');
+    } = {}
+  ) {
+    if (!data || data.format !== MAP_FORMAT) {
+      throw new Error(`RoadSerializer: unrecognized map format "${data?.format}"`);
+    }
+    if ((data.version ?? 0) > MAP_FORMAT_VERSION) {
+      console.warn(`RoadSerializer: map version ${data.version} > supported ${MAP_FORMAT_VERSION} — loading anyway`);
     }
     if ((data.buildings ?? []).length > 0 && !buildingManager) {
       console.warn('RoadSerializer: map contains buildings but no buildingManager was provided — skipped');
     }
+    if (!meshBuilder || !markingBuilder) {
+      throw new TypeError('RoadSerializer.deserialize: requires meshBuilder and markingBuilder');
+    }
 
     for (const node of data.nodes ?? []) {
-      network.addNode(node.position, node.id);
+      network.addNode(node.position, node.id, node.intersectionType ?? 'square');
     }
 
     for (const seg of data.segments ?? []) {
@@ -136,9 +141,12 @@ export class RoadSerializer {
         lanesBackward: seg.lanesBackward,
         laneWidthM: seg.laneWidthM,
         speedLimitKph: seg.speedLimitKph,
+        guardRails: seg.guardRails ?? 'none',
       });
       meshBuilder.build(segment);
       markingBuilder.build(segment);
+      if (guardRailBuilder) guardRailBuilder.build(segment);
+      if (laneMergerBuilder) RoadSerializer._updateMerger(segment, network, laneMergerBuilder);
     }
 
     if (intersectionBuilder) intersectionBuilder.buildAll(network);
@@ -192,5 +200,60 @@ export class RoadSerializer {
     }
 
     return { network, vehicleSpawns };
+  }
+
+  static _updateMerger(segment, network, laneMergerBuilder) {
+    if (!laneMergerBuilder || !network) return;
+    const startNode = network.getNode(segment.startNodeId);
+    const endNode = network.getNode(segment.endNodeId);
+    const startTotalSegs = network.getSegmentsAtNode(segment.startNodeId);
+    const endTotalSegs = network.getSegmentsAtNode(segment.endNodeId);
+
+    // Merging ONLY happens when the junction has MORE than two roads!
+    const startHasJunction = startTotalSegs.length > 2;
+    const endHasJunction = endTotalSegs.length > 2;
+
+    if (!startHasJunction && !endHasJunction) {
+      laneMergerBuilder.dispose(segment.id);
+      return;
+    }
+
+    let minStartFwd = segment.lanesForward;
+    if (startHasJunction) {
+      for (const s of startTotalSegs) {
+        if (s.id !== segment.id) minStartFwd = Math.min(minStartFwd, s.lanesForward);
+      }
+      if (startNode?.intersectionType === 'roundabout' && segment.lanesBackward > 1) {
+        minStartFwd = Math.min(minStartFwd, 1);
+      }
+    }
+
+    let minEndFwd = segment.lanesForward;
+    if (endHasJunction) {
+      for (const s of endTotalSegs) {
+        if (s.id !== segment.id) minEndFwd = Math.min(minEndFwd, s.lanesForward);
+      }
+      if (endNode?.intersectionType === 'roundabout' && segment.lanesForward > 1) {
+        minEndFwd = Math.min(minEndFwd, 1);
+      }
+    }
+
+    if (endHasJunction && minEndFwd < segment.lanesForward) {
+      laneMergerBuilder.buildForSegment(segment, {
+        taperEnd: 'end',
+        side: 'both',
+        originalWidthM: segment.halfWidthForwardM,
+        targetWidthM: minEndFwd * segment.laneWidthM,
+      });
+    } else if (startHasJunction && minStartFwd < segment.lanesBackward) {
+      laneMergerBuilder.buildForSegment(segment, {
+        taperEnd: 'start',
+        side: 'both',
+        originalWidthM: segment.halfWidthBackwardM,
+        targetWidthM: minStartFwd * segment.laneWidthM,
+      });
+    } else {
+      laneMergerBuilder.dispose(segment.id);
+    }
   }
 }
