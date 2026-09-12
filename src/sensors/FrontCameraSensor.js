@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { clamp } from '../utils/MathUtils.js';
 
 const SOBEL_VERTEX = /* glsl */ `
   varying vec2 vUv;

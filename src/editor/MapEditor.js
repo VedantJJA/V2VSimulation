@@ -94,6 +94,9 @@ export class MapEditor {
     this._raycaster = new THREE.Raycaster();
     this._groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
+    // ---- Canvas size -------------------------------------------------------------
+    this.canvasSize = 500;
+
     // ---- UI + input ------------------------------------------------------------------
     this.ui = new EditorUI(this);
 
@@ -192,6 +195,7 @@ export class MapEditor {
       this.vehicleSpawns = vehicleSpawns;
       this._spawnSequence = vehicleSpawns.length;
       for (const spawn of this.vehicleSpawns) this._addSpawnPreview(spawn);
+      this.autoFitCanvas();
     }
 
     this._selectedSegmentId = this.network.segmentIds[0] ?? null;
@@ -810,17 +814,62 @@ export class MapEditor {
     this.validateCollisions();
   }
 
-  // ---- views ---------------------------------------------------------------------
+  // ---- views & canvas -----------------------------------------------------------
+
+  setCanvasSize(sizeM) {
+    this.canvasSize = Number(sizeM) || 500;
+    this._sceneManager?.setGroundSize(this.canvasSize);
+
+    // Allow user to orbit and zoom out over the whole expanded canvas
+    if (this._orbit) {
+      this._orbit.maxDistance = Math.max(EDITOR.orbitMaxDistanceM, this.canvasSize * 2.2);
+    }
+    // Prevent far plane clipping on huge maps
+    if (this._camera && this._camera.far < this.canvasSize * 3.5) {
+      this._camera.far = Math.max(6000, this.canvasSize * 3.5);
+      this._camera.updateProjectionMatrix();
+    }
+    this.ui?.refreshCanvasSize?.(this.canvasSize);
+  }
+
+  autoFitCanvas() {
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    if (this.network?.nodes) {
+      for (const node of this.network.nodes.values()) {
+        const x = node.position?.x ?? node.x;
+        const z = node.position?.z ?? node.z;
+        if (x != null && z != null) {
+          minX = Math.min(minX, x);
+          maxX = Math.max(maxX, x);
+          minZ = Math.min(minZ, z);
+          maxZ = Math.max(maxZ, z);
+        }
+      }
+    }
+    if (isFinite(minX) && isFinite(maxX) && isFinite(minZ) && isFinite(maxZ)) {
+      const spanX = Math.abs(maxX - minX);
+      const spanZ = Math.abs(maxZ - minZ);
+      const maxSpan = Math.max(spanX, spanZ);
+      // Auto size: comfortable margin rounded up to nearest 500m
+      const target = Math.max(500, Math.ceil((maxSpan * 1.35) / 500) * 500);
+      this.setCanvasSize(target);
+      return target;
+    }
+    this.setCanvasSize(500);
+    return 500;
+  }
 
   setView(name) {
     const target = this._orbit.target;
+    const scaleFactor = Math.max(1.0, this.canvasSize / 500);
     if (name === 'top') {
-      this._camera.position.set(target.x, EDITOR.topViewHeightM, target.z + 0.001);
+      const topHeight = Math.max(EDITOR.topViewHeightM, EDITOR.topViewHeightM * scaleFactor * 0.7);
+      this._camera.position.set(target.x, topHeight, target.z + 0.001);
     } else {
       this._camera.position.set(
-        target.x + EDITOR.orbitViewOffset[0],
-        EDITOR.orbitViewOffset[1],
-        target.z + EDITOR.orbitViewOffset[2]
+        target.x + EDITOR.orbitViewOffset[0] * scaleFactor,
+        EDITOR.orbitViewOffset[1] * scaleFactor,
+        target.z + EDITOR.orbitViewOffset[2] * scaleFactor
       );
     }
     this._orbit.update();

@@ -15,7 +15,7 @@
  * @module world/Terrain
  */
 
-export const TERRAIN_STATUS = 'NOT IMPLEMENTED — future (flat ground active)';
+export const TERRAIN_STATUS = 'NOT IMPLEMENTED future (flat ground active)';
 
 export class Terrain {
   constructor() {

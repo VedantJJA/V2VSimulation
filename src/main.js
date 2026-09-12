@@ -11,6 +11,7 @@ import { Minimap } from './ui/Minimap.js';
 import { NavigationSystem } from './navigation/NavigationSystem.js';
 import { LaneGuideVisualizer } from './navigation/LaneGuideVisualizer.js';
 import { AutoDriveController } from './vehicles/AutoDriveController.js';
+import { MultiplayerClient } from './multiplayer/MultiplayerClient.js';
 
 import { RoadNetwork } from './road/RoadNetwork.js';
 import { RoadMeshBuilder, ROAD_SURFACE_Y } from './road/RoadMeshBuilder.js';
@@ -86,21 +87,67 @@ function enterSimulation(source) {
 
 async function resolveMapData(source) {
   if (source && source.data) return source.data;
-  const url = (source && source.url) ?? `${import.meta.env.BASE_URL}maps/sample.json`;
+  const url = (source && source.url) ?? `${import.meta.env.BASE_URL}maps/silverstone.json`;
   const response = await fetch(url);
   if (!response.ok) throw new Error(`HTTP ${response.status} while loading ${url}`);
   return response.json();
 }
 
-// The v2 sample map declares no vehicleSpawns — fall back to the Phase-4
-// default traffic. Editor-made and city maps declare their own.
+// Default traffic spawns for Silverstone Circuit (Hamilton Straight, Wellington, Hangar)
 const DEFAULT_VEHICLE_SPAWNS = [
-  { segmentId: 's1', lane: 0, distanceAlongM: 95, isEgo: true },
-  { segmentId: 's1', lane: -1, distanceAlongM: 25, targetSpeedMps: 8 },
-  { segmentId: 's2', lane: 0, distanceAlongM: 30, targetSpeedMps: 7 },
+  { segmentId: 's1', lane: 0, distanceAlongM: 20, isEgo: true },
+  { segmentId: 's1', lane: 1, distanceAlongM: 65, targetSpeedMps: 22 },
+  { segmentId: 's6', lane: 0, distanceAlongM: 75, targetSpeedMps: 26 },
+  { segmentId: 's14', lane: 0, distanceAlongM: 110, targetSpeedMps: 30 },
 ];
 
+const SILVERSTONE_MAP_URL = `${import.meta.env.BASE_URL}maps/silverstone.json`;
 const CITY_MAP_URL = `${import.meta.env.BASE_URL}maps/city.json`;
+const SAMPLE_MAP_URL = `${import.meta.env.BASE_URL}maps/sample.json`;
+
+/** Procedural canvas texture for 3D trackside corner number & name signs. */
+function createCornerSignTexture(numberText, nameText) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+
+  // Dark background
+  ctx.fillStyle = '#1e2530';
+  ctx.beginPath();
+  ctx.arc(128, 128, 124, 0, Math.PI * 2);
+  ctx.fill();
+
+  // White outer border
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.lineWidth = 8;
+  ctx.stroke();
+
+  // Red inner racing ring
+  ctx.strokeStyle = '#e53e3e';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(128, 128, 114, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Large Corner Number
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 88px system-ui, -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(String(numberText), 128, nameText ? 104 : 128);
+
+  // Official Corner Name
+  if (nameText) {
+    ctx.fillStyle = '#cbd5e1';
+    ctx.font = 'bold 20px system-ui, -apple-system, sans-serif';
+    ctx.fillText(nameText.toUpperCase(), 128, 172);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
 
 /** Ego sensor + traffic HUD text (fed at ~10 Hz). */
 function formatSensorReadout(ego, egoStack, lodManager, v2vManager, gpuCastEngine, cameraSensor = null, autoDriveCtrl = null) {
@@ -210,11 +257,17 @@ function createSimulationSession(source) {
   let egoExtras = null; // { egoStack, sensorVisualizer, frontCameraSensor }
   let cleanupSimInputs = null;
   let autoDriveController = null;
+  let cornerMarkersGroup = null;
+  let multiplayerClient = null;
 
   const session = {
     dispose() {
       if (disposed) return;
       disposed = true;
+      if (multiplayerClient) {
+        multiplayerClient.dispose();
+        multiplayerClient = null;
+      }
       cleanupSimInputs?.();
       cleanupSimInputs = null;
       runTraffic = null;
@@ -252,6 +305,17 @@ function createSimulationSession(source) {
         minimap.dispose();
         minimap = null;
       }
+      if (cornerMarkersGroup) {
+        engine.sceneManager.remove(cornerMarkersGroup);
+        cornerMarkersGroup.traverse((child) => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            if (child.material.map) child.material.map.dispose();
+            child.material.dispose();
+          }
+        });
+        cornerMarkersGroup = null;
+      }
       if (mapLoaded) {
         buildingManager.disposeAll();
         intersectionBuilder.disposeAll();
@@ -284,6 +348,61 @@ function createSimulationSession(source) {
       });
       mapLoaded = true;
 
+      // 3D Trackside Corner Number & Name Badges (matching FastF1 circuit plot)
+      if (data.corners && data.corners.length > 0) {
+        cornerMarkersGroup = new THREE.Group();
+        cornerMarkersGroup.name = 'silverstone:corner-markers';
+        const postMaterial = new THREE.MeshStandardMaterial({
+          color: 0x334155,
+          metalness: 0.8,
+          roughness: 0.3,
+        });
+
+        for (const corner of data.corners) {
+          const trk = corner.trackPosition;
+          const mrk = corner.markerPosition;
+          if (!trk || !mrk) continue;
+
+          // 1. Vertical support post
+          const postGeo = new THREE.CylinderGeometry(0.12, 0.12, 2.4, 12);
+          const post = new THREE.Mesh(postGeo, postMaterial);
+          post.position.set(mrk[0], 1.2, mrk[2]);
+          post.castShadow = true;
+          cornerMarkersGroup.add(post);
+
+          // 2. Circular sign board facing the track apex
+          const signTex = createCornerSignTexture(corner.name, corner.officialName);
+          const signMat = new THREE.MeshStandardMaterial({
+            map: signTex,
+            roughness: 0.35,
+            metalness: 0.1,
+          });
+          const signGeo = new THREE.CylinderGeometry(1.25, 1.25, 0.08, 24);
+          signGeo.rotateX(Math.PI / 2);
+          const sign = new THREE.Mesh(signGeo, signMat);
+          sign.position.set(mrk[0], 2.4, mrk[2]);
+          sign.lookAt(trk[0], 2.4, trk[2]);
+          sign.castShadow = true;
+          cornerMarkersGroup.add(sign);
+
+          // 3. Apex line indicator connecting track to marker
+          const linePts = [
+            new THREE.Vector3(trk[0], 0.06, trk[2]),
+            new THREE.Vector3(mrk[0], 0.06, mrk[2]),
+          ];
+          const lineGeo = new THREE.BufferGeometry().setFromPoints(linePts);
+          const lineMat = new THREE.LineDashedMaterial({
+            color: 0xa0aec0,
+            dashSize: 1.5,
+            gapSize: 1.0,
+          });
+          const line = new THREE.Line(lineGeo, lineMat);
+          line.computeLineDistances();
+          cornerMarkersGroup.add(line);
+        }
+        engine.sceneManager.add(cornerMarkersGroup);
+      }
+
       controlPanel.addRoadsDebugFolder({
         network: roadNetwork,
         meshBuilder: roadMeshBuilder,
@@ -300,7 +419,11 @@ function createSimulationSession(source) {
             .filter((info) => info && roadNetwork.getSegment(info.segmentId));
           enterEditor(RoadSerializer.serialize(roadNetwork, buildingManager, spawns));
         },
-        builtInMaps: [{ name: 'city grid (600 m)', url: CITY_MAP_URL }],
+        builtInMaps: [
+          { name: 'Silverstone Circuit (F1)', url: SILVERSTONE_MAP_URL },
+          { name: 'City Grid (600 m)', url: CITY_MAP_URL },
+          { name: 'Sample (3-way junction)', url: SAMPLE_MAP_URL },
+        ],
       });
 
       // Spawns: filter to existing segments in this network
@@ -309,22 +432,45 @@ function createSimulationSession(source) {
       const spawns = validMapSpawns.length > 0 ? validMapSpawns : validDefaultSpawns;
 
       let ego = null;
-      for (const spawn of spawns) {
-        if (spawn.isEgo) {
-          if (ego) continue; // ego is exclusive
-          ego = vehicleFactory.spawnEgo({
-            segmentId: spawn.segmentId,
-            lane: spawn.lane,
-            distanceAlongM: spawn.distanceAlongM,
-            controller: vehicleController,
-          });
-        } else {
-          vehicleFactory.spawnNPC({
-            segmentId: spawn.segmentId,
-            lane: spawn.lane,
-            distanceAlongM: spawn.distanceAlongM,
-            targetSpeedMps: spawn.targetSpeedMps ?? 8,
-          });
+      if (source?.multiplayer?.enabled) {
+        multiplayerClient = new MultiplayerClient({
+          serverUrl: source.multiplayer.serverUrl,
+          playerName: source.multiplayer.playerName,
+          vehicleColor: source.multiplayer.vehicleColor,
+          sceneManager: engine.sceneManager,
+        });
+
+        // Grid slot placement along Silverstone Hamilton Straight
+        const slot = multiplayerClient.localSlot || 0;
+        const lane = slot % 2;
+        const dist = Math.max(5, 30 - slot * 8);
+        const startSeg = roadNetwork.getSegment('s1') ? 's1' : (roadNetwork.segmentIds[0] || 's1');
+
+        ego = vehicleFactory.spawnEgo({
+          segmentId: startSeg,
+          lane,
+          distanceAlongM: dist,
+          controller: vehicleController,
+          paintColor: source.multiplayer.vehicleColor,
+        });
+      } else {
+        for (const spawn of spawns) {
+          if (spawn.isEgo) {
+            if (ego) continue; // ego is exclusive
+            ego = vehicleFactory.spawnEgo({
+              segmentId: spawn.segmentId,
+              lane: spawn.lane,
+              distanceAlongM: spawn.distanceAlongM,
+              controller: vehicleController,
+            });
+          } else {
+            vehicleFactory.spawnNPC({
+              segmentId: spawn.segmentId,
+              lane: spawn.lane,
+              distanceAlongM: spawn.distanceAlongM,
+              targetSpeedMps: spawn.targetSpeedMps ?? 8,
+            });
+          }
         }
       }
 
@@ -589,7 +735,7 @@ function createSimulationSession(source) {
       const hudEl = document.createElement('div');
       hudEl.id = 'v2v-telemetry-hud';
       hudEl.style.position = 'fixed';
-      hudEl.style.bottom = '18px';
+      hudEl.style.top = '18px';
       hudEl.style.left = '18px';
       hudEl.style.padding = '12px 16px';
       hudEl.style.borderRadius = '12px';
@@ -657,6 +803,25 @@ function createSimulationSession(source) {
           navigationSystem?.showToast(`📷 Camera: ${cameraRig.mode.toUpperCase()}`);
         };
 
+        vehicleController.onRespawn = () => {
+          if (ego && roadNetwork.segmentIds.length > 0) {
+            const segId = roadNetwork.getSegment('s1') ? 's1' : roadNetwork.segmentIds[0];
+            const seg = roadNetwork.getSegment(segId);
+            if (seg) {
+              const pose = vehicleFactory.resolveSpawnPose({
+                segmentId: seg.id,
+                lane: 0,
+                distanceAlongM: 20,
+                y: 0.72,
+              });
+              if (pose && ego.motionModel?.reset) {
+                ego.motionModel.reset({ position: pose.position, headingRad: pose.headingRad, speedMps: 0 });
+                navigationSystem?.showToast('🔄 Vehicle Reset on Track');
+              }
+            }
+          }
+        };
+
         vehicleController.onAutoDriveToggled = (enabled) => {
           toggleAutoDrive(enabled);
         };
@@ -694,14 +859,21 @@ function createSimulationSession(source) {
         ego,
         vehicles: vehicleFactory.vehicles,
         navigationSystem,
+        corners: data.corners ?? [],
       });
 
-      // Slot 1: LOD-tiered traffic motion + collision resolution + GPS navigation + HUD minimap.
+      if (multiplayerClient) {
+        multiplayerClient._minimap = minimap;
+        multiplayerClient._refreshMinimapVehicles();
+      }
+
+      // Slot 1: LOD-tiered traffic motion + collision resolution + GPS navigation + HUD minimap + multiplayer.
       runTraffic = (dt) => {
         lodManager.update(dt);
         vehicleCollisionSystem.update();
         if (navigationSystem) navigationSystem.update(dt);
         if (minimap) minimap.update(dt);
+        if (multiplayerClient) multiplayerClient.update(dt, ego);
       };
 
       // Slot 2: V2V + sensors, then ego extras + HUD (10 Hz).
@@ -814,13 +986,19 @@ engine.camera.position.set(60, 55, 105);
 engine.camera.lookAt(0, 0, 0);
 engine.start();
 
-const modeSwitcher = new ModeSwitcher({ title: 'Road Network Sandbox' });
+const modeSwitcher = new ModeSwitcher({
+  title: 'Silverstone F1 Simulation',
+  subtitle: 'British Grand Prix Circuit (5.89 km)',
+});
 const choice = await modeSwitcher.choose();
 
 if (choice.mode === 'edit') {
   enterEditor(choice.data ?? null);
 } else {
-  enterSimulation(choice.data ? { data: choice.data } : {});
+  enterSimulation({
+    ...(choice.data ? { data: choice.data } : {}),
+    multiplayer: choice.multiplayer ?? null,
+  });
 }
 
 // Clean teardown on HMR (reverse creation order).

@@ -136,6 +136,54 @@ export class EditorUI {
 
     bar.append(el('div', 'sep'));
 
+    // Canvas Size Expansion
+    const canvasWrap = el('div');
+    canvasWrap.style.display = 'flex';
+    canvasWrap.style.alignItems = 'center';
+    canvasWrap.style.gap = '4px';
+
+    const canvasLabel = el('span', null, 'Canvas:');
+    canvasLabel.style.color = '#8b96a5';
+    canvasLabel.style.fontSize = '11px';
+    canvasLabel.style.paddingLeft = '4px';
+
+    this._canvasSelect = el('select', 'editor-btn');
+    this._canvasSelect.style.padding = '4px 6px';
+    this._canvasSelect.style.fontSize = '11px';
+    this._canvasSelect.title = 'Ground canvas grid size in meters';
+
+    const sizes = [
+      ['500', '500m (Standard)'],
+      ['1000', '1,000m (Medium)'],
+      ['2000', '2,000m (Large)'],
+      ['3000', '3,000m (Silverstone F1)'],
+      ['5000', '5,000m (Ultra Wide)'],
+    ];
+    for (const [val, text] of sizes) {
+      const opt = document.createElement('option');
+      opt.value = val;
+      opt.textContent = text;
+      this._canvasSelect.appendChild(opt);
+    }
+    this._canvasSelect.value = String(this.editor.canvasSize || 500);
+    this._canvasSelect.addEventListener('change', (e) => {
+      this.editor.setCanvasSize(Number(e.target.value));
+      this.setStatus(`Canvas ground resized to ${e.target.value}m × ${e.target.value}m`);
+    });
+
+    const autoFitBtn = el('button', 'editor-btn', '⛶ Auto-Fit');
+    autoFitBtn.title = 'Auto-fit ground canvas to circuit bounds';
+    autoFitBtn.addEventListener('click', () => {
+      const fitted = this.editor.autoFitCanvas();
+      this._canvasSelect.value = String(fitted);
+      this.setStatus(`Canvas ground auto-fitted to ${fitted}m × ${fitted}m`);
+    });
+
+    canvasWrap.append(canvasLabel, this._canvasSelect, autoFitBtn);
+    bar.append(canvasWrap);
+
+    bar.append(el('div', 'sep'));
+
     const undoButton = el('button', 'editor-btn', '↺ Undo');
     undoButton.title = 'Undo last change (Ctrl+Z)';
     undoButton.addEventListener('click', () => this.editor.undo());
@@ -352,6 +400,30 @@ export class EditorUI {
   refresh() {
     this._refreshSegmentControls();
     this._refreshSpawnList();
+    if (this.editor?.canvasSize) {
+      this.refreshCanvasSize(this.editor.canvasSize);
+    }
+  }
+
+  refreshCanvasSize(sizeM) {
+    if (this._canvasSelect) {
+      // If the size isn't one of the standard options, add or update a custom option
+      const strVal = String(sizeM);
+      let found = false;
+      for (const opt of this._canvasSelect.options) {
+        if (opt.value === strVal) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        const customOpt = document.createElement('option');
+        customOpt.value = strVal;
+        customOpt.textContent = `${sizeM}m (Auto-Fitted)`;
+        this._canvasSelect.appendChild(customOpt);
+      }
+      this._canvasSelect.value = strVal;
+    }
   }
 
   _refreshSegmentControls() {

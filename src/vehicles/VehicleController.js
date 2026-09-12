@@ -24,13 +24,18 @@ export class VehicleController {
     this.onAutoDriveDisengaged = null;
     this.onAutoDriveToggled = null;
     this.onCycleCamera = null;
+    this.onCycleCamera = null;
     this.onGamepadConnected = null;
+    this.onRespawn = null;
 
     this._keys = new Set();
     this._steering = 0; // slewed current steering
     this._holdingBrake = false;
     this._prevGamepadToggle = false;
     this._prevGamepadCamera = false;
+    this._prevGamepadRespawn = false;
+    this._hasDetectedGamepad = false;
+    this._bannerTimeout = null;
 
     this._mappedCodes = new Set(Object.values(keyMap).flat());
 
@@ -49,11 +54,14 @@ export class VehicleController {
 
     this._onGamepadConnected = (e) => {
       console.log(`[controller] Gamepad connected: ${e.gamepad.id}`);
+      this._hasDetectedGamepad = true;
+      this._showGamepadBanner(e.gamepad);
       this.onGamepadConnected?.(e.gamepad);
       this.playHaptic(0.4, 150);
     };
     this._onGamepadDisconnected = (e) => {
       console.log(`[controller] Gamepad disconnected: ${e.gamepad.id}`);
+      this._hasDetectedGamepad = false;
     };
 
     window.addEventListener('keydown', this._onKeyDown);
@@ -61,6 +69,58 @@ export class VehicleController {
     window.addEventListener('blur', this._onBlur);
     window.addEventListener('gamepadconnected', this._onGamepadConnected);
     window.addEventListener('gamepaddisconnected', this._onGamepadDisconnected);
+
+    // Initial check in case controller is already plugged in
+    if (typeof navigator !== 'undefined' && navigator.getGamepads) {
+      const gps = navigator.getGamepads();
+      for (const gp of gps) {
+        if (gp && gp.connected) {
+          this._hasDetectedGamepad = true;
+          this._showGamepadBanner(gp);
+          break;
+        }
+      }
+    }
+  }
+
+  _showGamepadBanner(gp) {
+    let banner = document.getElementById('v2v-gamepad-banner');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'v2v-gamepad-banner';
+      banner.style.position = 'fixed';
+      banner.style.bottom = '20px';
+      banner.style.right = '20px';
+      banner.style.zIndex = '90';
+      banner.style.background = 'rgba(16, 24, 38, 0.94)';
+      banner.style.border = '1px solid #3b82f6';
+      banner.style.boxShadow = '0 6px 20px rgba(0,0,0,0.4), 0 0 15px rgba(59,130,246,0.3)';
+      banner.style.borderRadius = '8px';
+      banner.style.padding = '10px 16px';
+      banner.style.fontFamily = 'monospace';
+      banner.style.fontSize = '12px';
+      banner.style.color = '#e2e8f0';
+      banner.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
+      document.body.appendChild(banner);
+    }
+    const name = gp?.id ? gp.id.replace(/\([^)]*\)/g, '').trim().slice(0, 32) : 'Gamepad';
+    banner.innerHTML = `
+      <div style="font-weight: bold; color: #60a5fa; margin-bottom: 3px; display: flex; align-items: center; gap: 6px;">
+        🎮 Controller Active: ${name}
+      </div>
+      <div style="font-size: 11px; color: #94a3b8;">
+        Left Stick: Steer · RT: Throttle · LT: Brake/Rev · Y: AutoDrive · LB: Camera · Back: Reset
+      </div>
+    `;
+    banner.style.opacity = '1';
+    banner.style.transform = 'translateY(0)';
+    clearTimeout(this._bannerTimeout);
+    this._bannerTimeout = setTimeout(() => {
+      if (banner) {
+        banner.style.opacity = '0';
+        banner.style.transform = 'translateY(10px)';
+      }
+    }, 5000);
   }
 
   /**
@@ -79,6 +139,11 @@ export class VehicleController {
       }
     }
     if (!gp) return null;
+
+    if (!this._hasDetectedGamepad && gp) {
+      this._hasDetectedGamepad = true;
+      this._showGamepadBanner(gp);
+    }
 
     // 1. Steering: Left Thumbstick X (axis 0) with deadzone & fine sensitivity curve
     let steer = 0;
@@ -108,8 +173,9 @@ export class VehicleController {
     if (gp.buttons[13]?.pressed) brake = Math.max(brake, 1.0); // D-Pad Down
 
     // 4. Action Buttons
-    const toggleBtn = !!(gp.buttons[3]?.pressed || gp.buttons[5]?.pressed || gp.buttons[8]?.pressed); // Y / Triangle, RB, View/Back
+    const toggleBtn = !!(gp.buttons[3]?.pressed || gp.buttons[5]?.pressed); // Y / Triangle, RB
     const cameraBtn = !!(gp.buttons[4]?.pressed || gp.buttons[11]?.pressed); // LB, Right Stick Click
+    const respawnBtn = !!(gp.buttons[8]?.pressed || gp.buttons[9]?.pressed); // Back/View / Start
 
     return {
       steer: clamp(steer, -1, 1),
@@ -117,6 +183,7 @@ export class VehicleController {
       brake: clamp(brake, 0, 1),
       toggleBtn,
       cameraBtn,
+      respawnBtn,
       hasInput: Math.abs(steer) > 0.05 || throttle > 0.05 || brake > 0.05,
     };
   }
@@ -198,6 +265,13 @@ export class VehicleController {
       this.playHaptic(0.3, 80);
     }
     this._prevGamepadCamera = gpInput?.cameraBtn ?? false;
+
+    // Gamepad button edge detection for Respawn / Track Reset (Button Back/View/Start)
+    if (gpInput?.respawnBtn && !this._prevGamepadRespawn) {
+      this.onRespawn?.();
+      this.playHaptic(0.6, 200);
+    }
+    this._prevGamepadRespawn = gpInput?.respawnBtn ?? false;
 
     // ── Driver Manual Input Detection (Keyboard + Gamepad) ───────────
     const isDown = (action) => this._keyMap[action].some((code) => this._keys.has(code));

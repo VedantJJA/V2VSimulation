@@ -107,4 +107,13 @@ export class KinematicBicycleModel {
 
     return this._state;
   }
+
+  reset({ position = null, headingRad = 0, speedMps = 0 } = {}) {
+    if (position) {
+      if (position.isVector3) this._state.position.copy(position);
+      else this._state.position.set(position[0] ?? 0, position[1] ?? 0, position[2] ?? 0);
+    }
+    this._state.headingRad = headingRad;
+    this._state.speedMps = speedMps;
+  }
 }

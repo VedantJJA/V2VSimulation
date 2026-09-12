@@ -26,11 +26,12 @@ export class Minimap {
    * @param {import('../vehicles/Vehicle.js').Vehicle[]} [options.vehicles]
    * @param {import('../navigation/NavigationSystem.js').NavigationSystem} [options.navigationSystem]
    */
-  constructor({ network, ego = null, vehicles = [], navigationSystem = null } = {}) {
+  constructor({ network, ego = null, vehicles = [], navigationSystem = null, corners = [] } = {}) {
     this.network = network;
     this.ego = ego;
     this.vehicles = vehicles;
     this.navigationSystem = navigationSystem;
+    this.corners = corners;
 
     this.scale = 0.95; // meters per pixel
     this.minScale = 0.25;
@@ -64,6 +65,10 @@ export class Minimap {
 
   setNavigationSystem(nav) {
     this.navigationSystem = nav;
+  }
+
+  setCorners(corners) {
+    this.corners = corners;
   }
 
   _createDOM() {
@@ -585,13 +590,58 @@ export class Minimap {
         ctx.lineWidth = 1.5;
         ctx.fill();
         ctx.stroke();
-      } else {
-        // Multi-road junction pad
+      } else if (segs.length > 2) {
+        // Multi-road junction pad (only for true 3-way/4-way junctions, not simple road bends)
         const r = Math.max(5, 7.5 / this.scale);
         ctx.beginPath();
         ctx.arc(mapPt.x, mapPt.y, r, 0, Math.PI * 2);
         ctx.fillStyle = '#323a48';
         ctx.fill();
+      }
+    }
+
+    // 2B. Draw Circuit Corners (FastF1 Formula 1 Badges)
+    if (this.corners && this.corners.length > 0) {
+      for (const corner of this.corners) {
+        const trk = corner.trackPosition;
+        const mrk = corner.markerPosition;
+        if (!trk || !mrk) continue;
+
+        const pTrk = worldToMap(trk[0], trk[2]);
+        const pMrk = worldToMap(mrk[0], mrk[2]);
+
+        // Connecting line from track apex to corner circle
+        ctx.beginPath();
+        ctx.moveTo(pTrk.x, pTrk.y);
+        ctx.lineTo(pMrk.x, pMrk.y);
+        ctx.strokeStyle = 'rgba(160, 174, 192, 0.7)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Grey circular corner badge
+        const badgeR = Math.max(7, Math.min(13, 10 / Math.sqrt(this.scale)));
+        ctx.beginPath();
+        ctx.arc(pMrk.x, pMrk.y, badgeR, 0, Math.PI * 2);
+        ctx.fillStyle = '#2d3748';
+        ctx.fill();
+        ctx.strokeStyle = '#cbd5e1';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+
+        // Corner text inside circle
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `bold ${Math.round(badgeR * 1.1)}px system-ui, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(corner.name, pMrk.x, pMrk.y + 0.5);
+
+        // In expanded map mode, also show the official corner name (e.g. Abbey, Stowe)
+        if (this.isExpanded && corner.officialName) {
+          ctx.fillStyle = '#94a3b8';
+          ctx.font = '10px system-ui, sans-serif';
+          ctx.textAlign = 'left';
+          ctx.fillText(` ${corner.officialName}`, pMrk.x + badgeR + 2, pMrk.y + 0.5);
+        }
       }
     }
 

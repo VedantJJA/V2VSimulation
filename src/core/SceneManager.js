@@ -102,6 +102,34 @@ export class SceneManager {
   }
 
   /**
+   * Dynamically resize the ground plane and grid overlay (useful for large circuit maps like Silverstone).
+   * @param {number} sizeM side length in meters
+   * @param {number} [divisions] number of grid divisions
+   */
+  setGroundSize(sizeM = 500, divisions = null) {
+    if (!this._phase0Ground) return;
+    const [ground, grid] = this._phase0Ground;
+
+    if (ground) {
+      ground.geometry.dispose();
+      ground.geometry = new THREE.PlaneGeometry(sizeM, sizeM);
+    }
+
+    if (grid) {
+      this.scene.remove(grid);
+      if (grid.geometry) grid.geometry.dispose();
+      const div = divisions ?? Math.min(300, Math.max(50, Math.round(sizeM / 20)));
+      const newGrid = new THREE.GridHelper(sizeM, div, 0x71808f, 0x2c3138);
+      newGrid.name = 'grid';
+      newGrid.position.y = 0.02;
+      newGrid.material.transparent = true;
+      newGrid.material.opacity = 0.55;
+      this.scene.add(newGrid);
+      this._phase0Ground[1] = newGrid;
+    }
+  }
+
+  /**
    * Phase 1 hand-off: retire the placeholder hemisphere + sun lights.
    * environment/Lighting.js owns all lights from now on. Idempotent.
    */
